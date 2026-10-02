@@ -38,13 +38,13 @@ export default function FamilySetup() {
         <div className="text-4xl mb-4">🎉</div>
         <h2 className="text-xl font-bold text-white mb-2">Família criada!</h2>
         <p className="text-gray-400 text-sm mb-6 text-center">
-          Compartilhe esse código com sua esposa para ela entrar na lista:
+          Compartilhe este código com quem vai usar a lista com você:
         </p>
         <div className="bg-gray-800 rounded-2xl px-10 py-6 text-4xl font-bold tracking-[0.3em] text-green-400 mb-6">
           {createdCode}
         </div>
         <p className="text-gray-500 text-xs text-center">
-          Ela vai acessar o app, clicar em "Entrar com código" e digitar esse código.
+          A pessoa entra no app, toca em "Entrar com código" e digita este código.
         </p>
       </div>
     )

@@ -45,7 +45,8 @@ npx firebase-tools@15 deploy --only firestore:rules
 ```
 users/{uid}                  familyId, email, joinCode
 familyCodes/{code}           familyId          (convite; leitura só por ID)
-families/{fid}               code, createdBy, members[]
+families/{fid}               name, code, createdBy (dono), members[], admins[], plan
+  profiles/{uid}             nome, e-mail, foto de cada membro
   lists/{listId}             name, status, createdAt
     entries/{entryId}        itens da lista
   catalog/{nome}             último preço + histórico
@@ -54,3 +55,15 @@ families/{fid}               code, createdBy, members[]
 ```
 
 Acesso a `families/{fid}/**` só para quem está em `members` (ver `firestore.rules`).
+
+### Papéis
+
+| Ação | Dono | Admin | Membro |
+|---|:-:|:-:|:-:|
+| Usar listas, catálogo, histórico | ✓ | ✓ | ✓ |
+| Renomear família, gerar novo código | ✓ | ✓ | |
+| Remover membro comum | ✓ | ✓ | |
+| Promover/remover admin, remover admin da família | ✓ | | |
+| Sair da família | | ✓ | ✓ |
+
+`plan` (`{ name, seats }`) só pode ser gravado pelo servidor (Admin SDK). Sem plano, o limite é 5 pessoas.

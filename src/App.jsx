@@ -7,6 +7,7 @@ import ActiveList from './pages/ActiveList'
 import History from './pages/History'
 import Catalog from './pages/Catalog'
 import Reports from './pages/Reports'
+import Account from './pages/Account'
 import BottomNav from './components/BottomNav'
 
 export default function App() {
@@ -43,6 +44,7 @@ export default function App() {
       {tab === 'catalog' && <Catalog onAddToList={handleAddToList} />}
       {tab === 'history' && <History />}
       {tab === 'reports' && <Reports />}
+      {tab === 'account' && <Account />}
       <BottomNav tab={tab} setTab={setTab} />
     </div>
   )

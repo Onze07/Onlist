@@ -7,9 +7,26 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function familyPath(fid) {
+      return /databases/$(database)/documents/families/$(fid);
+    }
+
     function isMember(fid) {
-      return signedIn()
-        && request.auth.uid in get(/databases/$(database)/documents/families/$(fid)).data.members;
+      return signedIn() && request.auth.uid in get(familyPath(fid)).data.members;
+    }
+
+    // Dono (createdBy) ou admin
+    function isAdminOf(data) {
+      return request.auth.uid == data.createdBy || request.auth.uid in data.get('admins', []);
+    }
+
+    // Vagas do plano. `plan` só é gravado pelo servidor (Admin SDK); sem plano = teste com 5 vagas.
+    function seatsOf(data) {
+      return data.get('plan', {}).get('seats', 5);
+    }
+
+    function unchanged(keys) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(keys);
     }
 
     // Perfil do usuário: só o próprio dono
@@ -21,9 +38,13 @@ service cloud.firestore {
     match /familyCodes/{code} {
       allow get: if signedIn();
       allow create: if signedIn()
-        && getAfter(/databases/$(database)/documents/families/$(request.resource.data.familyId)).data.code == code
-        && request.auth.uid in getAfter(/databases/$(database)/documents/families/$(request.resource.data.familyId)).data.members;
-      allow update, delete: if false;
+        && getAfter(familyPath(request.resource.data.familyId)).data.code == code
+        && request.auth.uid in getAfter(familyPath(request.resource.data.familyId)).data.members;
+      // Apagar código antigo ao gerar um novo (só admin, e só se a família já usa outro código)
+      allow delete: if signedIn()
+        && isAdminOf(get(familyPath(resource.data.familyId)).data)
+        && getAfter(familyPath(resource.data.familyId)).data.code != code;
+      allow update: if false;
     }
 
     match /families/{fid} {
@@ -31,27 +52,60 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.members == [request.auth.uid];
+        && request.resource.data.members == [request.auth.uid]
+        && request.resource.data.get('admins', []) == []
+        && !('plan' in request.resource.data);
 
-      // Membro pode editar, sem trocar código nem criador
+      // Admin: renomear, remover membros, trocar código. Só o dono mexe em admins.
+      allow update: if signedIn()
+        && isAdminOf(resource.data)
+        && unchanged(['createdBy', 'plan'])
+        // só remove, nunca adiciona membros por aqui
+        && resource.data.members.toSet().hasAll(request.resource.data.members)
+        // dono nunca é removido
+        && resource.data.createdBy in request.resource.data.members
+        // admins precisam ser membros
+        && request.resource.data.members.toSet().hasAll(request.resource.data.get('admins', []))
+        && (request.auth.uid == resource.data.createdBy || (
+              unchanged(['admins'])
+              // admin comum não remove outro admin
+              && request.resource.data.members.toSet().hasAll(resource.data.get('admins', []))
+            ))
+        && (unchanged(['code'])
+            || getAfter(/databases/$(database)/documents/familyCodes/$(request.resource.data.code)).data.familyId == fid);
+
+      // Sair da família (qualquer membro, exceto o dono)
       allow update: if signedIn()
         && request.auth.uid in resource.data.members
-        && request.resource.data.code == resource.data.code
-        && request.resource.data.createdBy == resource.data.createdBy;
+        && request.auth.uid != resource.data.createdBy
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'admins'])
+        && request.resource.data.members.toSet() == resource.data.members.toSet().difference([request.auth.uid].toSet())
+        && request.resource.data.get('admins', []).toSet() == resource.data.get('admins', []).toSet().difference([request.auth.uid].toSet());
 
-      // Entrar na família: só adiciona a si mesmo e prova que conhece o código
-      // (users/{uid}.joinCode gravado no mesmo batch)
+      // Entrar: só adiciona a si mesmo, prova que conhece o código
+      // (users/{uid}.joinCode no mesmo batch) e respeita o limite de vagas
       allow update: if signedIn()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
         && request.resource.data.members.toSet() == resource.data.members.toSet().union([request.auth.uid].toSet())
+        && resource.data.members.size() < seatsOf(resource.data)
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.joinCode == resource.data.code;
 
       allow delete: if false;
 
-      // Listas, itens, catálogo, histórico, mercados
+      // Nome/foto de cada membro, visível para a família
+      match /profiles/{uid} {
+        allow read: if isMember(fid);
+        allow create, update: if signedIn()
+          && request.auth.uid == uid
+          && uid in getAfter(familyPath(fid)).data.members;
+        allow delete: if signedIn()
+          && (request.auth.uid == uid || isAdminOf(get(familyPath(fid)).data));
+      }
+
+      // Listas, itens, catálogo, histórico, mercados.
       // {sub} exige ao menos um segmento: não casa com o próprio doc da família
       match /{sub}/{rest=**} {
-        allow read, write: if isMember(fid);
+        allow read, write: if sub != 'profiles' && isMember(fid);
       }
     }
   }

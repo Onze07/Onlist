@@ -1,4 +1,4 @@
-import { IconBarChart } from './Icon'
+import { IconBarChart, IconUser } from './Icon'
 
 export default function BottomNav({ tab, setTab }) {
   const tabs = [
@@ -32,6 +32,10 @@ export default function BottomNav({ tab, setTab }) {
     {
       id: 'reports', label: 'Relatórios',
       icon: () => <IconBarChart size={22} />,
+    },
+    {
+      id: 'account', label: 'Conta',
+      icon: (active) => <IconUser size={22} strokeWidth={active ? 2 : 1.5} />,
     },
   ]
 

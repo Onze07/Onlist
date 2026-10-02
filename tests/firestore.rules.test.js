@@ -4,7 +4,7 @@ import { after, before, beforeEach, test } from 'node:test'
 import {
   assertFails, assertSucceeds, initializeTestEnvironment,
 } from '@firebase/rules-unit-testing'
-import { arrayUnion, doc, getDoc, setDoc, updateDoc, writeBatch, collection, getDocs } from 'firebase/firestore'
+import { arrayRemove, arrayUnion, deleteDoc, doc, getDoc, setDoc, updateDoc, writeBatch, collection, getDocs } from 'firebase/firestore'
 
 let env
 
@@ -21,7 +21,7 @@ beforeEach(async () => {
   await env.clearFirestore()
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore()
-    await setDoc(doc(db, 'families/fam1'), { code: 'ABC234', createdBy: 'alice', members: ['alice'] })
+    await setDoc(doc(db, 'families/fam1'), { code: 'ABC234', createdBy: 'alice', members: ['alice', 'adam', 'mia'], admins: ['adam'] })
     await setDoc(doc(db, 'familyCodes/ABC234'), { familyId: 'fam1' })
     await setDoc(doc(db, 'families/fam1/lists/l1/entries/e1'), { name: 'Arroz' })
   })
@@ -80,7 +80,8 @@ test('entrar não pode adicionar outra pessoa', async () => {
 test('criar família própria com código', async () => {
   const db = as('carol')
   const batch = writeBatch(db)
-  batch.set(doc(db, 'families/fam2'), { code: 'XYZ789', createdBy: 'carol', members: ['carol'] })
+  batch.set(doc(db, 'families/fam2'), { code: 'XYZ789', createdBy: 'carol', members: ['carol'], admins: [] })
+  batch.set(doc(db, 'families/fam2/profiles/carol'), { name: 'Carol' })
   batch.set(doc(db, 'familyCodes/XYZ789'), { familyId: 'fam2' })
   batch.set(doc(db, 'users/carol'), { familyId: 'fam2' })
   await assertSucceeds(batch.commit())
@@ -108,4 +109,134 @@ test('membro não troca o código da família', async () => {
 test('usuário só acessa o próprio perfil', async () => {
   await assertSucceeds(setDoc(doc(as('bob'), 'users/bob'), { email: 'b@x' }))
   await assertFails(getDoc(doc(as('bob'), 'users/alice')))
+})
+
+// --- Gestão de acesso ---
+
+const join = (uid, code = 'ABC234') => {
+  const db = as(uid)
+  const batch = writeBatch(db)
+  batch.set(doc(db, `users/${uid}`), { familyId: 'fam1', joinCode: code })
+  batch.update(doc(db, 'families/fam1'), { members: arrayUnion(uid) })
+  return batch.commit()
+}
+
+test('criar família com plano é bloqueado', async () => {
+  await assertFails(setDoc(doc(as('carol'), 'families/fam9'), {
+    code: 'PLN234', createdBy: 'carol', members: ['carol'], plan: { seats: 99 },
+  }))
+})
+
+test('limite de vagas: entrar falha quando o plano está cheio', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'families/fam1'), { plan: { seats: 3 } })
+  })
+  await assertFails(join('bob'))
+})
+
+test('limite de vagas padrão é 5', async () => {
+  await assertSucceeds(join('bob'))
+  await assertSucceeds(join('carl'))
+  await assertFails(join('dora'))
+})
+
+test('ninguém altera o plano pelo app', async () => {
+  await assertFails(updateDoc(doc(as('alice'), 'families/fam1'), { plan: { seats: 50 } }))
+})
+
+test('dono remove membro', async () => {
+  await assertSucceeds(updateDoc(doc(as('alice'), 'families/fam1'), { members: arrayRemove('mia') }))
+})
+
+test('admin remove membro comum', async () => {
+  await assertSucceeds(updateDoc(doc(as('adam'), 'families/fam1'), { members: arrayRemove('mia') }))
+})
+
+test('admin não remove o dono', async () => {
+  await assertFails(updateDoc(doc(as('adam'), 'families/fam1'), { members: arrayRemove('alice') }))
+})
+
+test('membro comum não remove ninguém', async () => {
+  await assertFails(updateDoc(doc(as('mia'), 'families/fam1'), { members: arrayRemove('adam') }))
+})
+
+test('só o dono promove admin', async () => {
+  await assertFails(updateDoc(doc(as('adam'), 'families/fam1'), { admins: arrayUnion('mia') }))
+  await assertSucceeds(updateDoc(doc(as('alice'), 'families/fam1'), { admins: arrayUnion('mia') }))
+})
+
+test('admin não remove outro admin', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'families/fam1'), { admins: ['adam', 'mia'] })
+  })
+  await assertFails(updateDoc(doc(as('adam'), 'families/fam1'), { members: arrayRemove('mia'), admins: arrayRemove('mia') }))
+})
+
+test('admin não adiciona membro direto', async () => {
+  await assertFails(updateDoc(doc(as('adam'), 'families/fam1'), { members: arrayUnion('eve') }))
+})
+
+test('membro sai da família', async () => {
+  await assertSucceeds(updateDoc(doc(as('mia'), 'families/fam1'), { members: arrayRemove('mia'), admins: arrayRemove('mia') }))
+  await assertFails(getDoc(doc(as('mia'), 'families/fam1/lists/l1/entries/e1')))
+})
+
+test('dono não sai da família', async () => {
+  await assertFails(updateDoc(doc(as('alice'), 'families/fam1'), { members: arrayRemove('alice') }))
+})
+
+test('admin gera novo código', async () => {
+  const db = as('adam')
+  const batch = writeBatch(db)
+  batch.set(doc(db, 'familyCodes/NEW567'), { familyId: 'fam1' })
+  batch.update(doc(db, 'families/fam1'), { code: 'NEW567' })
+  batch.delete(doc(db, 'familyCodes/ABC234'))
+  await assertSucceeds(batch.commit())
+  await assertFails(join('bob', 'ABC234'))
+})
+
+test('membro comum não troca código', async () => {
+  const db = as('mia')
+  const batch = writeBatch(db)
+  batch.set(doc(db, 'familyCodes/NEW567'), { familyId: 'fam1' })
+  batch.update(doc(db, 'families/fam1'), { code: 'NEW567' })
+  await assertFails(batch.commit())
+})
+
+test('não apaga código em uso', async () => {
+  await assertFails(deleteDoc(doc(as('alice'), 'familyCodes/ABC234')))
+})
+
+test('perfil: cada um edita o seu, família lê todos', async () => {
+  await assertSucceeds(setDoc(doc(as('mia'), 'families/fam1/profiles/mia'), { name: 'Mia' }))
+  await assertFails(setDoc(doc(as('mia'), 'families/fam1/profiles/adam'), { name: 'Hack' }))
+  await assertSucceeds(getDoc(doc(as('adam'), 'families/fam1/profiles/mia')))
+  await assertFails(getDoc(doc(as('mallory'), 'families/fam1/profiles/mia')))
+})
+
+test('admin apaga perfil de quem removeu', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'families/fam1/profiles/mia'), { name: 'Mia' })
+  })
+  const db = as('adam')
+  const batch = writeBatch(db)
+  batch.update(doc(db, 'families/fam1'), { members: arrayRemove('mia'), admins: arrayRemove('mia') })
+  batch.delete(doc(db, 'families/fam1/profiles/mia'))
+  await assertSucceeds(batch.commit())
+})
+
+test('entrar já gravando o perfil', async () => {
+  const db = as('bob')
+  const batch = writeBatch(db)
+  batch.set(doc(db, 'users/bob'), { familyId: 'fam1', joinCode: 'ABC234' })
+  batch.update(doc(db, 'families/fam1'), { members: arrayUnion('bob') })
+  batch.set(doc(db, 'families/fam1/profiles/bob'), { name: 'Bob' })
+  await assertSucceeds(batch.commit())
+})
+
+test('família legada sem admins: dono gerencia normalmente', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'families/old'), { code: 'OQI1IV', createdBy: 'dan', members: ['dan', 'eva'] })
+  })
+  await assertSucceeds(updateDoc(doc(as('dan'), 'families/old'), { members: arrayRemove('eva'), admins: arrayRemove('eva') }))
 })

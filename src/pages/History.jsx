@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { collection, onSnapshot, orderBy, query, deleteDoc, doc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
-import { IconTrash, IconChevronDown, IconChevronRight } from '../components/Icon'
+import { IconTrash, IconChevronDown, IconChevronRight, IconDownload } from '../components/Icon'
+import { toCsv, downloadFile } from '../lib/csv'
+import { localDate } from '../lib/firestore'
 
 function fmt(n) {
   return (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -42,6 +44,20 @@ export default function History() {
     if (expanded === id) setExpanded(null)
   }
 
+  function exportCsv() {
+    const rows = []
+    for (const r of records) {
+      const d = r.createdAt?.toDate ? r.createdAt.toDate() : null
+      const date = d ? d.toLocaleDateString('pt-BR') : ''
+      for (const item of r.items || []) {
+        rows.push([date, r.mercado, r.listName || '', item.name, item.category || '', item.qty, item.unit,
+          Number(item.pricePerUnit) || 0, Number(item.totalPrice) || 0])
+      }
+    }
+    const csv = toCsv(['Data', 'Mercado', 'Lista', 'Item', 'Categoria', 'Quantidade', 'Unidade', 'Preço unitário', 'Total'], rows)
+    downloadFile(`onlist-compras-${localDate()}.csv`, csv)
+  }
+
   // Group by month
   const byMonth = {}
   for (const r of records) {
@@ -54,7 +70,15 @@ export default function History() {
   return (
     <div className="flex flex-col min-h-svh bg-gray-900">
       <div className="px-4 pt-12 pb-3 border-b border-gray-800">
-        <h1 className="text-white text-xl font-semibold">Registros</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-white text-xl font-semibold">Registros</h1>
+          {records.length > 0 && (
+            <button onClick={exportCsv}
+              className="text-gray-400 text-xs flex items-center gap-1.5 border border-gray-700 px-3 py-1.5 rounded-lg">
+              <IconDownload size={14} /> Exportar
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto pb-20">
