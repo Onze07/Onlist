@@ -4,6 +4,7 @@ import { auth } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useFamily } from '../context/FamilyContext'
 import { IconEdit, IconX } from '../components/Icon'
+import { userPhoto } from '../lib/user'
 
 const APP_URL = typeof window !== 'undefined' ? window.location.origin : ''
 
@@ -89,7 +90,7 @@ export default function Account() {
 
       {/* Usuário */}
       <div className="px-4 pt-5 flex items-center gap-3">
-        <Avatar profile={{ name: user.displayName, email: user.email, photoURL: user.photoURL }} size={48} />
+        <Avatar profile={{ name: user.displayName, email: user.email, photoURL: userPhoto(user) }} size={48} />
         <div className="flex-1 min-w-0">
           <p className="text-white font-medium truncate">{user.displayName || user.email}</p>
           <p className="text-gray-500 text-xs truncate">{user.email}</p>

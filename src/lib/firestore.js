@@ -26,3 +26,28 @@ export function parsePrice(value) {
   const n = parseFloat(String(value).replace(',', '.'))
   return Number.isFinite(n) ? n : 0
 }
+
+// Histórico de preços sem repetição:
+// - por dia, se houver registros com mercado (compra finalizada), mantém um por mercado
+// - senão, mantém só o último valor do dia (edições do item antes da compra)
+export function normalizePriceHistory(history = []) {
+  const byDate = new Map()
+  for (const h of history) {
+    if (!h?.date || !(Number(h.price) > 0)) continue
+    if (!byDate.has(h.date)) byDate.set(h.date, [])
+    byDate.get(h.date).push(h)
+  }
+  const result = []
+  for (const date of [...byDate.keys()].sort()) {
+    const entries = byDate.get(date)
+    const withMarket = entries.filter(h => h.mercado)
+    if (withMarket.length) {
+      const perMarket = new Map()
+      for (const h of withMarket) perMarket.set(h.mercado, h)
+      result.push(...perMarket.values())
+    } else {
+      result.push(entries[entries.length - 1])
+    }
+  }
+  return result
+}

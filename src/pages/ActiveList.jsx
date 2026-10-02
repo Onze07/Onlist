@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import {
   collection, onSnapshot, addDoc, updateDoc, deleteDoc,
-  doc, setDoc, serverTimestamp, getDocs, arrayUnion, query, orderBy
+  doc, setDoc, serverTimestamp, getDocs, query, orderBy
 } from 'firebase/firestore'
 import { db } from '../firebase'
-import { commitInChunks, localDate, parsePrice } from '../lib/firestore'
+import { commitInChunks, localDate, normalizePriceHistory, parsePrice } from '../lib/firestore'
 import { useFamily } from '../context/FamilyContext'
 import { useAuth } from '../context/AuthContext'
 import ItemForm from '../components/ItemForm'
@@ -187,11 +187,11 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     } else {
       await addDoc(col, { ...data, checked: false, createdAt: serverTimestamp() })
     }
+    // Só atualiza o último preço; o histórico é gravado ao finalizar a compra (preço pago + mercado)
     if (data.pricePerUnit > 0) {
       await setDoc(doc(db, 'families', familyId, 'catalog', data.name.toLowerCase()), {
         name: data.name, category: data.category, unit: data.unit,
         lastPrice: data.pricePerUnit,
-        priceHistory: arrayUnion({ price: data.pricePerUnit, date: localDate() }),
       }, { merge: true })
     }
     setShowForm(false); setEditItem(null); setPrefillItem(null)
@@ -220,12 +220,18 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       ops.push(b => b.set(doc(db, 'families', familyId, 'mercados', mercado.trim().toLowerCase()), { name: mercado.trim() }))
     }
     // update catalog with price + mercado
+    // Regrava o histórico já sem repetições (limpa também registros antigos duplicados)
     for (const e of checked) {
       if (Number(e.pricePerUnit) > 0) {
-        ops.push(b => b.set(doc(db, 'families', familyId, 'catalog', e.name.toLowerCase()), {
+        const key = e.name.toLowerCase()
+        const priceHistory = normalizePriceHistory([
+          ...(catalog[key]?.priceHistory || []),
+          { price: Number(e.pricePerUnit), date: today, mercado: mercadoName },
+        ])
+        ops.push(b => b.set(doc(db, 'families', familyId, 'catalog', key), {
           name: e.name, category: e.category, unit: e.unit,
           lastPrice: e.pricePerUnit,
-          priceHistory: arrayUnion({ price: e.pricePerUnit, date: today, mercado: mercadoName }),
+          priceHistory,
         }, { merge: true }))
       }
     }

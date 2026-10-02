@@ -5,6 +5,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from './AuthContext'
+import { userPhoto } from '../lib/user'
 
 const FamilyContext = createContext(null)
 
@@ -30,7 +31,7 @@ function profileData(user) {
   return {
     name: user.displayName || user.email,
     email: user.email,
-    photoURL: user.photoURL || null,
+    photoURL: userPhoto(user),
     lastSeenAt: serverTimestamp(),
   }
 }
