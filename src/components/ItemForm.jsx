@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { collection, getDocs, orderBy, query } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
+import { parsePrice } from '../lib/firestore'
 
 const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
 const UNITS = ['un', 'kg', 'g', 'dz', 'ml', 'l']
@@ -25,13 +26,13 @@ export default function ItemForm({ onSave, onCancel, initial }) {
     setForm(prev => {
       const next = { ...prev, [field]: value }
       if (field === 'qty' || field === 'pricePerUnit') {
-        const q = parseFloat(next.qty) || 0
-        const p = parseFloat(next.pricePerUnit) || 0
+        const q = parsePrice(next.qty) || 0
+        const p = parsePrice(next.pricePerUnit) || 0
         next.totalPrice = (q * p).toFixed(2)
       }
       if (field === 'totalPrice') {
-        const q = parseFloat(next.qty) || 0
-        if (q > 0) next.pricePerUnit = (parseFloat(value) / q).toFixed(2)
+        const q = parsePrice(next.qty) || 0
+        if (q > 0) next.pricePerUnit = (parsePrice(value) / q).toFixed(2)
       }
       return next
     })
@@ -50,7 +51,7 @@ export default function ItemForm({ onSave, onCancel, initial }) {
       category: item.category || prev.category,
       unit: item.unit || prev.unit,
       pricePerUnit: String(item.lastPrice || ''),
-      totalPrice: String(((parseFloat(prev.qty) || 0) * (item.lastPrice || 0)).toFixed(2)),
+      totalPrice: String(((parsePrice(prev.qty) || 0) * (item.lastPrice || 0)).toFixed(2)),
     }))
     setSuggestions([])
   }
@@ -65,10 +66,10 @@ export default function ItemForm({ onSave, onCancel, initial }) {
       name: form.name.trim(),
       obs: form.obs.trim(),
       category: form.category,
-      qty: parseFloat(form.qty) || 1,
+      qty: parsePrice(form.qty) || 1,
       unit: form.unit,
-      pricePerUnit: parseFloat(form.pricePerUnit) || 0,
-      totalPrice: parseFloat(form.totalPrice) || 0,
+      pricePerUnit: parsePrice(form.pricePerUnit) || 0,
+      totalPrice: parsePrice(form.totalPrice) || 0,
     })
   }
 
@@ -118,11 +119,11 @@ export default function ItemForm({ onSave, onCancel, initial }) {
         {/* Qty + Unit */}
         <div className="flex gap-2 mb-3">
           <div className="flex items-center bg-gray-800 rounded-xl flex-1">
-            <button onClick={() => set('qty', String(Math.max(0.1, (parseFloat(form.qty) || 0) - (form.unit === 'kg' || form.unit === 'l' ? 0.1 : 1))))}
+            <button onClick={() => set('qty', String(Math.max(0.1, (parsePrice(form.qty) || 0) - (form.unit === 'kg' || form.unit === 'l' ? 0.1 : 1))))}
               className="px-4 py-3 text-white text-xl">−</button>
             <input value={form.qty} onChange={e => set('qty', e.target.value)} inputMode="decimal"
               className="flex-1 bg-transparent text-white text-center outline-none font-semibold" />
-            <button onClick={() => set('qty', String(Math.round(((parseFloat(form.qty) || 0) + (form.unit === 'kg' || form.unit === 'l' ? 0.1 : 1)) * 10) / 10))}
+            <button onClick={() => set('qty', String(Math.round(((parsePrice(form.qty) || 0) + (form.unit === 'kg' || form.unit === 'l' ? 0.1 : 1)) * 10) / 10))}
               className="px-4 py-3 text-white text-xl">+</button>
           </div>
           <select value={form.unit} onChange={e => set('unit', e.target.value)}

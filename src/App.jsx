@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useAuth } from './context/AuthContext'
 import { useFamily } from './context/FamilyContext'
 import Login from './pages/Login'
@@ -14,6 +14,7 @@ export default function App() {
   const { familyId, loading } = useFamily()
   const [tab, setTab] = useState('list')
   const [pendingCatalogItem, setPendingCatalogItem] = useState(null)
+  const clearPendingCatalogItem = useCallback(() => setPendingCatalogItem(null), [])
 
   if (user === undefined || loading) {
     return (
@@ -36,7 +37,7 @@ export default function App() {
       <div style={{ display: tab === 'list' ? 'block' : 'none' }}>
         <ActiveList
           pendingAddFromCatalog={pendingCatalogItem}
-          onCatalogItemHandled={() => setPendingCatalogItem(null)}
+          onCatalogItemHandled={clearPendingCatalogItem}
         />
       </div>
       {tab === 'catalog' && <Catalog onAddToList={handleAddToList} />}

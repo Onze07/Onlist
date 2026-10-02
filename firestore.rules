@@ -1,0 +1,58 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isMember(fid) {
+      return signedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/families/$(fid)).data.members;
+    }
+
+    // Perfil do usuário: só o próprio dono
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Código de convite -> familyId. Leitura só por ID exato (sem listagem).
+    match /familyCodes/{code} {
+      allow get: if signedIn();
+      allow create: if signedIn()
+        && getAfter(/databases/$(database)/documents/families/$(request.resource.data.familyId)).data.code == code
+        && request.auth.uid in getAfter(/databases/$(database)/documents/families/$(request.resource.data.familyId)).data.members;
+      allow update, delete: if false;
+    }
+
+    match /families/{fid} {
+      allow get: if signedIn() && request.auth.uid in resource.data.members;
+
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.members == [request.auth.uid];
+
+      // Membro pode editar, sem trocar código nem criador
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.members
+        && request.resource.data.code == resource.data.code
+        && request.resource.data.createdBy == resource.data.createdBy;
+
+      // Entrar na família: só adiciona a si mesmo e prova que conhece o código
+      // (users/{uid}.joinCode gravado no mesmo batch)
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+        && request.resource.data.members.toSet() == resource.data.members.toSet().union([request.auth.uid].toSet())
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.joinCode == resource.data.code;
+
+      allow delete: if false;
+
+      // Listas, itens, catálogo, histórico, mercados
+      // {sub} exige ao menos um segmento: não casa com o próprio doc da família
+      match /{sub}/{rest=**} {
+        allow read, write: if isMember(fid);
+      }
+    }
+  }
+}
