@@ -1,4 +1,4 @@
-import { signInWithPopup } from 'firebase/auth'
+import { getAdditionalUserInfo, signInWithPopup, updateProfile } from 'firebase/auth'
 import { auth, googleProvider } from '../firebase'
 
 function OnlistLogo({ size = 80 }) {
@@ -23,7 +23,12 @@ function OnlistLogo({ size = 80 }) {
 export default function Login() {
   async function handleLogin() {
     try {
-      await signInWithPopup(auth, googleProvider)
+      const result = await signInWithPopup(auth, googleProvider)
+      // Foto e nome atuais do Google (o Firebase guarda os do primeiro login)
+      const profile = getAdditionalUserInfo(result)?.profile
+      if (profile?.picture && profile.picture !== result.user.photoURL) {
+        await updateProfile(result.user, { photoURL: profile.picture }).catch(() => {})
+      }
     } catch (e) {
       alert('Erro ao entrar: ' + e.message)
     }

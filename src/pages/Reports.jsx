@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { collection, getDocs, orderBy, query } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
-import { normalizePriceHistory } from '../lib/firestore'
+import { fmtDate, normalizePriceHistory } from '../lib/firestore'
 
 function fmt(n) {
   return (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -214,7 +214,7 @@ export default function Reports() {
                     {history.map((h, i) => (
                       <div key={i} className="flex-shrink-0 text-center min-w-[70px]">
                         <p className="text-gray-300 text-xs font-medium">{fmt(h.price)}</p>
-                        <p className="text-gray-600 text-xs">{h.date?.slice(5)}</p>
+                        <p className="text-gray-600 text-xs">{fmtDate(h.date, { short: true })}</p>
                         {h.mercado && <p className="text-gray-700 text-xs truncate max-w-[80px]">{h.mercado}</p>}
                       </div>
                     ))}

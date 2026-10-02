@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { collection, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
-import { normalizePriceHistory, parsePrice } from '../lib/firestore'
+import { fmtDate, normalizePriceHistory, parsePrice } from '../lib/firestore'
 import { IconEdit, IconTrash, IconChevronDown, IconChevronRight, IconTrendingUp } from '../components/Icon'
 
 const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
@@ -132,7 +132,7 @@ export default function Catalog({ onAddToList }) {
                     <div className="flex flex-col gap-1">
                       {[...item.priceHistory].reverse().map((h, idx) => (
                         <div key={idx} className="flex justify-between text-xs gap-3">
-                          <span className="text-gray-500">{h.date}{h.mercado ? ` · ${h.mercado}` : ''}</span>
+                          <span className="text-gray-500">{fmtDate(h.date)}{h.mercado ? ` · ${h.mercado}` : ''}</span>
                           <span className="text-gray-300 flex-shrink-0">{fmt(h.price)}/{item.unit}</span>
                         </div>
                       ))}

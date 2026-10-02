@@ -27,27 +27,28 @@ export function parsePrice(value) {
   return Number.isFinite(n) ? n : 0
 }
 
-// Histórico de preços sem repetição:
-// - por dia, se houver registros com mercado (compra finalizada), mantém um por mercado
-// - senão, mantém só o último valor do dia (edições do item antes da compra)
+// "2026-07-12" -> "12/07/2026" (ou "12/07" com short)
+export function fmtDate(iso, { short = false } = {}) {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-')
+  return short ? `${d}/${m}` : `${d}/${m}/${y}`
+}
+
+// Histórico de preços = preços pagos em compras finalizadas (sempre têm mercado).
+// Registros sem mercado vinham de edições do item na lista e são ignorados.
+// Um registro por mercado por dia.
 export function normalizePriceHistory(history = []) {
   const byDate = new Map()
   for (const h of history) {
-    if (!h?.date || !(Number(h.price) > 0)) continue
+    if (!h?.date || !h.mercado || !(Number(h.price) > 0)) continue
     if (!byDate.has(h.date)) byDate.set(h.date, [])
     byDate.get(h.date).push(h)
   }
   const result = []
   for (const date of [...byDate.keys()].sort()) {
-    const entries = byDate.get(date)
-    const withMarket = entries.filter(h => h.mercado)
-    if (withMarket.length) {
-      const perMarket = new Map()
-      for (const h of withMarket) perMarket.set(h.mercado, h)
-      result.push(...perMarket.values())
-    } else {
-      result.push(entries[entries.length - 1])
-    }
+    const perMarket = new Map()
+    for (const h of byDate.get(date)) perMarket.set(h.mercado, h)
+    result.push(...perMarket.values())
   }
   return result
 }
