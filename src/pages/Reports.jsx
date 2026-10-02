@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { collection, getDocs, orderBy, query } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
+import { normalizePriceHistory } from '../lib/firestore'
 
 function fmt(n) {
   return (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -21,7 +22,10 @@ export default function Reports() {
       getDocs(query(collection(db, 'families', familyId, 'catalog'), orderBy('name'))),
     ]).then(([hSnap, cSnap]) => {
       setHistory(hSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      setCatalog(cSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setCatalog(cSnap.docs.map(d => {
+        const data = d.data()
+        return { id: d.id, ...data, priceHistory: normalizePriceHistory(data.priceHistory) }
+      }))
       setLoading(false)
     })
   }, [familyId])
@@ -194,7 +198,7 @@ export default function Reports() {
               <p className="text-gray-600 text-sm">Registros de preço aparecem aqui conforme você compra os mesmos produtos ao longo do tempo.</p>
             )}
             {priceItems.map(item => {
-              const history = [...(item.priceHistory || [])].sort((a, b) => a.date.localeCompare(b.date))
+              const history = item.priceHistory
               const first = history[0]?.price || 0
               const last = history[history.length - 1]?.price || 0
               const diff = last - first

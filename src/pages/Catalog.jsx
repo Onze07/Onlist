@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { collection, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
-import { parsePrice } from '../lib/firestore'
+import { normalizePriceHistory, parsePrice } from '../lib/firestore'
 import { IconEdit, IconTrash, IconChevronDown, IconChevronRight, IconTrendingUp } from '../components/Icon'
 
 const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
@@ -25,7 +25,10 @@ export default function Catalog({ onAddToList }) {
     if (!familyId) return
     const q = query(collection(db, 'families', familyId, 'catalog'), orderBy('name'))
     return onSnapshot(q, snap => {
-      setItems(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setItems(snap.docs.map(d => {
+        const data = d.data()
+        return { id: d.id, ...data, priceHistory: normalizePriceHistory(data.priceHistory) }
+      }))
     })
   }, [familyId])
 
