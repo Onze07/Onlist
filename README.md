@@ -1,16 +1,56 @@
-# React + Vite
+# Onlist
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Lista de compras compartilhada da família. PWA em React + Vite, com Firebase (Auth Google + Firestore).
 
-Currently, two official plugins are available:
+## Rodar local
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+cp .env.example .env.local   # preencher com as chaves do app web no Firebase Console
+npm install
+npm run dev
+```
 
-## React Compiler
+## Scripts
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| Comando | O que faz |
+|---|---|
+| `npm run dev` | servidor local |
+| `npm run build` | build de produção em `dist/` |
+| `npm run lint` | oxlint |
+| `npm run test:rules` | testa `firestore.rules` no emulador (precisa de Java) |
 
-## Expanding the Oxlint configuration
+## Deploy
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+São dois deploys independentes:
+
+### 1. Front-end — Vercel (automático)
+
+- Projeto `onlist` na Vercel, ligado a este repositório.
+- Push em qualquer branch → deploy de **preview**.
+- Merge em `main` → deploy de **produção**.
+- Variáveis `VITE_FIREBASE_*` ficam em Vercel → Settings → Environment Variables.
+- Login Google em URL nova: adicionar o domínio em Firebase Console → Authentication → Settings → Authorized domains.
+
+### 2. Regras do Firestore — Firebase CLI (manual)
+
+```bash
+npx firebase-tools@15 login
+npx firebase-tools@15 use --add          # escolher o projeto Firebase (gera .firebaserc)
+npm run test:rules              # opcional, valida antes
+npx firebase-tools@15 deploy --only firestore:rules
+```
+
+## Estrutura do Firestore
+
+```
+users/{uid}                  familyId, email, joinCode
+familyCodes/{code}           familyId          (convite; leitura só por ID)
+families/{fid}               code, createdBy, members[]
+  lists/{listId}             name, status, createdAt
+    entries/{entryId}        itens da lista
+  catalog/{nome}             último preço + histórico
+  history/{id}               compras finalizadas
+  mercados/{nome}
+```
+
+Acesso a `families/{fid}/**` só para quem está em `members` (ver `firestore.rules`).

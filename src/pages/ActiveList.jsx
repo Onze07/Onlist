@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
 import {
   collection, onSnapshot, addDoc, updateDoc, deleteDoc,
-  doc, setDoc, serverTimestamp, getDocs, arrayUnion
+  doc, setDoc, serverTimestamp, getDocs, arrayUnion, query, orderBy
 } from 'firebase/firestore'
 import { db } from '../firebase'
+import { commitInChunks, localDate, parsePrice } from '../lib/firestore'
 import { useFamily } from '../context/FamilyContext'
 import { useAuth } from '../context/AuthContext'
 import ItemForm from '../components/ItemForm'
 import ListManager from '../components/ListManager'
-import { IconEdit, IconTrash, IconChevronDown, IconCheck, IconPlus, IconX } from '../components/Icon'
+import { IconChevronDown, IconCheck, IconPlus, IconX } from '../components/Icon'
 
 const CATEGORY_ORDER = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
 
@@ -33,22 +34,43 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   const [mercadoOptions, setMercadoOptions] = useState([])
   const [mercadoFocused, setMercadoFocused] = useState(false)
   const [pricePrompt, setPricePrompt] = useState(null) // entry awaiting price before check
+  const [saving, setSaving] = useState(false)
 
-  // Load last list
+  // Load last list: usa a salva neste aparelho, senão a primeira ativa, senão cria a padrão
   useEffect(() => {
     if (!familyId) return
-    const saved = localStorage.getItem(`lastList_${familyId}`)
-    if (saved) {
-      try { const { id, name } = JSON.parse(saved); setListId(id); setListName(name) } catch {}
-    } else {
-      addDoc(collection(db, 'families', familyId, 'lists'), {
-        name: 'Compras gerais', status: 'active', createdAt: serverTimestamp(),
-      }).then(ref => {
-        setListId(ref.id); setListName('Compras gerais')
-        localStorage.setItem(`lastList_${familyId}`, JSON.stringify({ id: ref.id, name: 'Compras gerais' }))
-      })
+    let cancelled = false
+    const key = `lastList_${familyId}`
+
+    async function init() {
+      let saved = null
+      try { saved = JSON.parse(localStorage.getItem(key)) } catch { /* ignora */ }
+      const snap = await getDocs(query(collection(db, 'families', familyId, 'lists'), orderBy('createdAt', 'asc')))
+      const active = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.status !== 'archived')
+      let chosen = (saved && active.find(l => l.id === saved.id)) || active[0]
+      if (!chosen) {
+        // ID fixo: dois aparelhos abrindo ao mesmo tempo não duplicam a lista
+        chosen = { id: 'default', name: 'Compras gerais' }
+        await setDoc(doc(db, 'families', familyId, 'lists', 'default'), {
+          name: chosen.name, status: 'active', createdAt: serverTimestamp(),
+        })
+      }
+      if (cancelled) return
+      setListId(chosen.id); setListName(chosen.name)
+      try { localStorage.setItem(key, JSON.stringify({ id: chosen.id, name: chosen.name })) } catch { /* ignora */ }
     }
+
+    init().catch(e => console.error('Erro ao carregar lista', e))
+    return () => { cancelled = true }
   }, [familyId])
+
+  // Mantém o nome atualizado se a lista for renomeada em outro aparelho
+  useEffect(() => {
+    if (!familyId || !listId) return
+    return onSnapshot(doc(db, 'families', familyId, 'lists', listId), snap => {
+      if (snap.exists()) setListName(snap.data().name)
+    })
+  }, [familyId, listId])
 
   // Subscribe entries
   useEffect(() => {
@@ -89,11 +111,15 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     })
     setShowForm(true)
     onCatalogItemHandled()
-  }, [pendingAddFromCatalog])
+  }, [pendingAddFromCatalog, onCatalogItemHandled])
 
   function selectList(id, name) {
     setListId(id); setListName(name)
-    localStorage.setItem(`lastList_${familyId}`, JSON.stringify({ id, name }))
+    try { localStorage.setItem(`lastList_${familyId}`, JSON.stringify({ id, name })) } catch { /* ignora */ }
+  }
+
+  function entryRef(id) {
+    return doc(db, 'families', familyId, 'lists', listId, 'entries', id)
   }
 
   const pending = entries.filter(e => !e.checked)
@@ -138,15 +164,19 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   }
 
   async function uncheckAll() {
-    for (const e of checked) {
-      await updateDoc(doc(db, 'families', familyId, 'lists', listId, 'entries', e.id), { checked: false })
+    try {
+      await commitInChunks(checked.map(e => b => b.update(entryRef(e.id), { checked: false })))
+    } catch (e) {
+      alert('Erro ao desmarcar: ' + e.message)
     }
   }
 
   async function clearPending() {
     if (!confirm(`Remover os ${pending.length} itens pendentes?`)) return
-    for (const e of pending) {
-      await deleteDoc(doc(db, 'families', familyId, 'lists', listId, 'entries', e.id))
+    try {
+      await commitInChunks(pending.map(e => b => b.delete(entryRef(e.id))))
+    } catch (e) {
+      alert('Erro ao limpar: ' + e.message)
     }
   }
 
@@ -161,7 +191,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       await setDoc(doc(db, 'families', familyId, 'catalog', data.name.toLowerCase()), {
         name: data.name, category: data.category, unit: data.unit,
         lastPrice: data.pricePerUnit,
-        priceHistory: arrayUnion({ price: data.pricePerUnit, date: new Date().toISOString().slice(0, 10) }),
+        priceHistory: arrayUnion({ price: data.pricePerUnit, date: localDate() }),
       }, { merge: true })
     }
     setShowForm(false); setEditItem(null); setPrefillItem(null)
@@ -172,32 +202,44 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   }
 
   async function finishShopping() {
+    if (saving) return
+    setSaving(true)
     const mercadoName = mercado.trim() || 'Não informado'
-    const today = new Date().toISOString().slice(0, 10)
-    await addDoc(collection(db, 'families', familyId, 'history'), {
-      createdAt: serverTimestamp(),
-      mercado: mercadoName,
-      listName,
-      total: totalChecked,
-      items: checked.map(e => ({ name: e.name, qty: e.qty, unit: e.unit, totalPrice: e.totalPrice, pricePerUnit: e.pricePerUnit, category: e.category })),
-    })
+    const today = localDate()
+    const historyRef = doc(collection(db, 'families', familyId, 'history'))
+    const ops = [
+      b => b.set(historyRef, {
+        createdAt: serverTimestamp(),
+        mercado: mercadoName,
+        listName,
+        total: totalChecked,
+        items: checked.map(e => ({ name: e.name, qty: e.qty, unit: e.unit, totalPrice: e.totalPrice, pricePerUnit: e.pricePerUnit, category: e.category })),
+      }),
+    ]
     if (mercado.trim()) {
-      await setDoc(doc(db, 'families', familyId, 'mercados', mercado.trim().toLowerCase()), { name: mercado.trim() })
+      ops.push(b => b.set(doc(db, 'families', familyId, 'mercados', mercado.trim().toLowerCase()), { name: mercado.trim() }))
     }
     // update catalog with price + mercado
     for (const e of checked) {
       if (Number(e.pricePerUnit) > 0) {
-        await setDoc(doc(db, 'families', familyId, 'catalog', e.name.toLowerCase()), {
+        ops.push(b => b.set(doc(db, 'families', familyId, 'catalog', e.name.toLowerCase()), {
           name: e.name, category: e.category, unit: e.unit,
           lastPrice: e.pricePerUnit,
           priceHistory: arrayUnion({ price: e.pricePerUnit, date: today, mercado: mercadoName }),
-        }, { merge: true })
+        }, { merge: true }))
       }
     }
     for (const e of checked) {
-      await deleteDoc(doc(db, 'families', familyId, 'lists', listId, 'entries', e.id))
+      ops.push(b => b.delete(entryRef(e.id)))
     }
-    setFinishing(false); setMercado('')
+    try {
+      await commitInChunks(ops)
+      setFinishing(false); setMercado('')
+    } catch (e) {
+      alert('Erro ao registrar compra: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const mercadoFiltered = mercadoOptions.filter(m => m.toLowerCase().includes(mercado.toLowerCase()))
@@ -227,7 +269,9 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
           </div>
           <div className="flex gap-3">
             <button onClick={() => setFinishing(false)} className="flex-1 bg-gray-800 text-white font-medium py-3.5 rounded-xl text-sm">Cancelar</button>
-            <button onClick={finishShopping} className="flex-1 bg-green-500 text-white font-semibold py-3.5 rounded-xl text-sm">Registrar</button>
+            <button onClick={finishShopping} disabled={saving} className="flex-1 bg-green-500 disabled:opacity-50 text-white font-semibold py-3.5 rounded-xl text-sm">
+              {saving ? 'Registrando...' : 'Registrar'}
+            </button>
           </div>
         </div>
       </div>
@@ -414,7 +458,7 @@ function PricePromptModal({ entry, onConfirm, onSkip, onCancel }) {
             autoFocus
             value={price}
             onChange={e => setPrice(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && price && onConfirm(parseFloat(price))}
+            onKeyDown={e => e.key === 'Enter' && price && onConfirm(parsePrice(price))}
             inputMode="decimal"
             placeholder="0,00"
             className="flex-1 bg-transparent text-white text-xl py-4 outline-none"
@@ -427,7 +471,7 @@ function PricePromptModal({ entry, onConfirm, onSkip, onCancel }) {
             Marcar sem valor
           </button>
           <button
-            onClick={() => price ? onConfirm(parseFloat(price.replace(',', '.'))) : onSkip()}
+            onClick={() => price ? onConfirm(parsePrice(price)) : onSkip()}
             className="flex-1 bg-green-500 text-white font-semibold py-3.5 rounded-xl text-sm">
             {price ? 'Confirmar' : 'Pular'}
           </button>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore'
+import { collection, onSnapshot, addDoc, updateDoc, getDocs, doc, serverTimestamp, query, orderBy } from 'firebase/firestore'
 import { db } from '../firebase'
+import { commitInChunks } from '../lib/firestore'
 import { useFamily } from '../context/FamilyContext'
 import { IconEdit, IconTrash, IconArchive, IconUnarchive, IconX } from './Icon'
 
@@ -44,12 +45,21 @@ export default function ListManager({ activeListId, onSelect, onClose }) {
     setEditingId(null)
   }
 
-  async function archiveList(id) {
-    await updateDoc(doc(db, 'families', familyId, 'lists', id), { status: 'archived' })
-    if (id === activeListId) {
-      const next = active.find(l => l.id !== id)
-      if (next) onSelect(next.id, next.name)
+  // Evita deixar a tela principal apontando para uma lista arquivada/excluída
+  function nextActiveList(id) {
+    const next = active.find(l => l.id !== id)
+    if (id === activeListId && !next) {
+      alert('Crie outra lista antes. Esta é a única lista ativa.')
+      return undefined
     }
+    return next || null
+  }
+
+  async function archiveList(id) {
+    const next = nextActiveList(id)
+    if (next === undefined) return
+    await updateDoc(doc(db, 'families', familyId, 'lists', id), { status: 'archived' })
+    if (id === activeListId) onSelect(next.id, next.name)
   }
 
   async function unarchiveList(id) {
@@ -57,20 +67,30 @@ export default function ListManager({ activeListId, onSelect, onClose }) {
   }
 
   async function deleteList(id, name) {
+    const next = nextActiveList(id)
+    if (next === undefined) return
     if (!confirm(`Excluir a lista "${name}" permanentemente?`)) return
-    await deleteDoc(doc(db, 'families', familyId, 'lists', id))
-    if (id === activeListId) {
-      const next = lists.find(l => l.id !== id && l.status !== 'archived')
-      if (next) onSelect(next.id, next.name)
+    try {
+      // Firestore não apaga subcoleções sozinho: remove os itens antes da lista
+      const listRef = doc(db, 'families', familyId, 'lists', id)
+      const entries = await getDocs(collection(listRef, 'entries'))
+      await commitInChunks([
+        ...entries.docs.map(d => b => b.delete(d.ref)),
+        b => b.delete(listRef),
+      ])
+      if (id === activeListId) onSelect(next.id, next.name)
+    } catch (e) {
+      alert('Erro ao excluir: ' + e.message)
     }
   }
 
-  function ListRow({ list, isArchived }) {
+  // Função de render (não componente): evita remontar o input a cada tecla
+  function renderRow(list, isArchived) {
     const isActive = list.id === activeListId
 
     if (editingId === list.id) {
       return (
-        <div className="flex items-center gap-2 py-2 border-b border-gray-800">
+        <div key={list.id} className="flex items-center gap-2 py-2 border-b border-gray-800">
           <input autoFocus value={editingName} onChange={e => setEditingName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') renameList(list.id, editingName); if (e.key === 'Escape') setEditingId(null) }}
             className="flex-1 bg-gray-800 text-white px-3 py-1.5 rounded-lg outline-none text-sm" />
@@ -81,7 +101,7 @@ export default function ListManager({ activeListId, onSelect, onClose }) {
     }
 
     return (
-      <div className={`flex items-center gap-3 py-3 border-b border-gray-800 ${isArchived ? 'opacity-50' : ''}`}>
+      <div key={list.id} className={`flex items-center gap-3 py-3 border-b border-gray-800 ${isArchived ? 'opacity-50' : ''}`}>
         <button className="flex-1 text-left" onClick={() => { if (!isArchived) { onSelect(list.id, list.name); onClose() } }}>
           <span className={`text-sm ${isActive ? 'text-green-400 font-semibold' : 'text-white'}`}>{list.name}</span>
           {isActive && <span className="text-green-400/60 text-xs ml-2">· ativa</span>}
@@ -131,7 +151,7 @@ export default function ListManager({ activeListId, onSelect, onClose }) {
           </div>
         )}
 
-        {active.map(list => <ListRow key={list.id} list={list} isArchived={false} />)}
+        {active.map(list => renderRow(list, false))}
 
         {archived.length > 0 && (
           <div className="mt-4">
@@ -139,7 +159,7 @@ export default function ListManager({ activeListId, onSelect, onClose }) {
               className="text-gray-500 text-xs uppercase tracking-wider flex items-center gap-1 mb-2">
               {showArchived ? '▼' : '▶'} Arquivadas ({archived.length})
             </button>
-            {showArchived && archived.map(list => <ListRow key={list.id} list={list} isArchived={true} />)}
+            {showArchived && archived.map(list => renderRow(list, true))}
           </div>
         )}
       </div>

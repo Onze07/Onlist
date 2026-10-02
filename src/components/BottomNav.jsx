@@ -31,7 +31,7 @@ export default function BottomNav({ tab, setTab }) {
     },
     {
       id: 'reports', label: 'Relatórios',
-      icon: (active) => <IconBarChart size={22} />,
+      icon: () => <IconBarChart size={22} />,
     },
   ]
 

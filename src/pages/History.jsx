@@ -71,7 +71,7 @@ export default function History() {
               <span className="text-gray-400 text-xs font-medium">{fmt(month.total)}</span>
             </div>
 
-            {month.items.map((record, i) => {
+            {month.items.map(record => {
               const { day, weekday } = dayLabel(record.createdAt)
               const isExpanded = expanded === record.id
               return (

@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { collection, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
-import { IconEdit, IconTrash, IconX, IconChevronDown, IconChevronRight, IconTrendingUp } from '../components/Icon'
+import { parsePrice } from '../lib/firestore'
+import { IconEdit, IconTrash, IconChevronDown, IconChevronRight, IconTrendingUp } from '../components/Icon'
 
 const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
 const UNITS = ['un', 'kg', 'g', 'dz', 'ml', 'l']
@@ -178,7 +179,7 @@ function EditRow({ item, categories, units, onSave, onCancel }) {
       </div>
       <div className="flex gap-2">
         <button onClick={onCancel} className="flex-1 bg-gray-700 text-white py-2 rounded-lg text-sm">Cancelar</button>
-        <button onClick={() => onSave({ name: form.name, category: form.category, unit: form.unit, lastPrice: parseFloat(form.lastPrice) || 0 })}
+        <button onClick={() => onSave({ name: form.name, category: form.category, unit: form.unit, lastPrice: parsePrice(form.lastPrice) || 0 })}
           className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium">Salvar</button>
       </div>
     </div>
