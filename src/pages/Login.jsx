@@ -48,6 +48,10 @@ export default function Login() {
         <img src="https://www.google.com/favicon.ico" alt="" className="w-5 h-5" />
         Entrar com Google
       </button>
+      <p className="text-gray-500 text-xs text-center mt-6 max-w-xs leading-relaxed">
+        Ao entrar, você concorda com os <a href="#/termos" className="text-gray-300 underline">Termos de Uso</a> e
+        a <a href="#/privacidade" className="text-gray-300 underline">Política de Privacidade</a>.
+      </p>
     </div>
   )
 }

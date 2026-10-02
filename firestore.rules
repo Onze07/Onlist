@@ -41,10 +41,22 @@ service cloud.firestore {
         && getAfter(familyPath(request.resource.data.familyId)).data.code == code
         && request.auth.uid in getAfter(familyPath(request.resource.data.familyId)).data.members;
       // Apagar código antigo ao gerar um novo (só admin, e só se a família já usa outro código)
+      // ou junto com a exclusão da família
       allow delete: if signedIn()
         && isAdminOf(get(familyPath(resource.data.familyId)).data)
-        && getAfter(familyPath(resource.data.familyId)).data.code != code;
+        && (!existsAfter(familyPath(resource.data.familyId))
+            || getAfter(familyPath(resource.data.familyId)).data.code != code);
       allow update: if false;
+    }
+
+    // Feedback: qualquer usuário envia; leitura só pelo console do Firebase
+    match /feedback/{id} {
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 2000;
+      allow read, update, delete: if false;
     }
 
     match /families/{fid} {
@@ -90,7 +102,10 @@ service cloud.firestore {
         && resource.data.members.size() < seatsOf(resource.data)
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.joinCode == resource.data.code;
 
-      allow delete: if false;
+      // Excluir a família: só o dono, e só quando ele é o único membro (exclusão de conta)
+      allow delete: if signedIn()
+        && resource.data.createdBy == request.auth.uid
+        && resource.data.members.size() == 1;
 
       // Nome/foto de cada membro, visível para a família
       match /profiles/{uid} {
