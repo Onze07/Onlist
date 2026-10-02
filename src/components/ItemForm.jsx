@@ -3,6 +3,11 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
 import { parsePrice } from '../lib/firestore'
+import { useVisualViewport } from '../lib/useVisualViewport'
+
+function fmtBRL(n) {
+  return Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
 
 const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
 const UNITS = ['un', 'kg', 'g', 'dz', 'ml', 'l']
@@ -14,6 +19,7 @@ export default function ItemForm({ onSave, onCancel, initial }) {
   const [form, setForm] = useState(initial ? { ...initial, qty: String(initial.qty), pricePerUnit: String(initial.pricePerUnit || ''), totalPrice: String(initial.totalPrice || '') } : empty)
   const [catalog, setCatalog] = useState([])
   const [suggestions, setSuggestions] = useState([])
+  const viewport = useVisualViewport()
 
   useEffect(() => {
     if (!familyId) return
@@ -73,92 +79,95 @@ export default function ItemForm({ onSave, onCancel, initial }) {
     })
   }
 
-  return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-end" onClick={onCancel}>
-      <div className="bg-gray-900 rounded-t-3xl w-full max-w-lg mx-auto p-6 pb-10" onClick={e => e.stopPropagation()}>
-        <div className="w-10 h-1 bg-gray-700 rounded-full mx-auto mb-6" />
+  const step = form.unit === 'kg' || form.unit === 'l' ? 0.1 : 1
+  const field = 'bg-gray-800 text-white rounded-xl outline-none border border-transparent focus:border-green-500'
 
-        {/* Name */}
-        <div className="relative mb-3">
+  return (
+    <div className="fixed inset-x-0 z-50 bg-black/70 flex items-end" onClick={onCancel}
+      style={{ top: viewport.offsetTop, height: viewport.height }}>
+      <div className="bg-gray-900 rounded-t-3xl w-full max-w-lg mx-auto px-4 pt-3 max-h-full overflow-y-auto"
+        style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}
+        onClick={e => e.stopPropagation()}>
+        <div className="w-10 h-1 bg-gray-700 rounded-full mx-auto mb-3" />
+
+        {/* Nome */}
+        <div className="relative mb-2">
           <input
             autoFocus
             value={form.name}
             onChange={e => handleNameChange(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSave()}
             placeholder="Nome do item"
-            className="w-full bg-gray-800 text-white text-xl font-semibold px-4 py-3 rounded-xl outline-none border-2 border-transparent focus:border-green-500"
+            enterKeyHint="done"
+            className={`w-full text-lg font-semibold px-3 py-2.5 ${field}`}
           />
           {suggestions.length > 0 && (
-            <div className="absolute top-full left-0 right-0 bg-gray-800 rounded-xl mt-1 overflow-hidden z-10 shadow-xl">
+            <div className="absolute top-full left-0 right-0 bg-gray-800 rounded-xl mt-1 overflow-hidden z-10 shadow-xl border border-gray-700">
               {suggestions.map(s => (
                 <button key={s.id} onClick={() => applySuggestion(s)}
-                  className="w-full text-left px-4 py-3 text-white hover:bg-gray-700 flex justify-between items-center border-b border-gray-700 last:border-0">
+                  className="w-full text-left px-3 py-2.5 text-white text-sm hover:bg-gray-700 flex justify-between items-center border-b border-gray-700 last:border-0">
                   <span>{s.name}</span>
-                  <span className="text-gray-400 text-sm">{s.category} · {s.lastPrice ? `R$ ${s.lastPrice.toFixed(2)}` : ''}</span>
+                  <span className="text-gray-400 text-xs">{s.category}{s.lastPrice ? ` · ${fmtBRL(s.lastPrice)}` : ''}</span>
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        {/* OBS */}
+        {/* Categoria + unidade */}
+        <div className="flex gap-2 mb-2">
+          <select value={form.category} onChange={e => { set('category', e.target.value); setCategoryError(false) }}
+            className={`flex-1 min-w-0 px-3 py-2.5 text-base ${field} ${categoryError ? '!border-red-500' : ''}`}>
+            <option value="">Categoria…</option>
+            {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+          </select>
+          <select value={form.unit} onChange={e => set('unit', e.target.value)}
+            className={`w-20 px-3 py-2.5 text-base ${field}`}>
+            {UNITS.map(u => <option key={u}>{u}</option>)}
+          </select>
+        </div>
+        {categoryError && <p className="text-red-400 text-xs -mt-1 mb-2 px-1">Escolha uma categoria</p>}
+
+        {/* Quantidade + valores */}
+        <div className="grid grid-cols-3 gap-2 mb-2">
+          <div>
+            <label className="text-gray-500 text-[11px] mb-0.5 block px-1">Qtd</label>
+            <div className="flex items-center bg-gray-800 rounded-xl h-10">
+              <button type="button" onClick={() => set('qty', String(Math.max(step, Math.round(((parsePrice(form.qty) || 0) - step) * 10) / 10)))}
+                className="w-8 h-full text-white text-lg flex-shrink-0">−</button>
+              <input value={form.qty} onChange={e => set('qty', e.target.value)} inputMode="decimal"
+                className="w-full min-w-0 bg-transparent text-white text-center outline-none font-semibold text-base" />
+              <button type="button" onClick={() => set('qty', String(Math.round(((parsePrice(form.qty) || 0) + step) * 10) / 10))}
+                className="w-8 h-full text-white text-lg flex-shrink-0">+</button>
+            </div>
+          </div>
+          <div>
+            <label className="text-gray-500 text-[11px] mb-0.5 block px-1">Valor/{form.unit}</label>
+            <input value={form.pricePerUnit} onChange={e => set('pricePerUnit', e.target.value)} inputMode="decimal"
+              placeholder="R$ 0,00" className={`w-full h-10 px-2.5 text-base ${field}`} />
+          </div>
+          <div>
+            <label className="text-gray-500 text-[11px] mb-0.5 block px-1">Total</label>
+            <input value={form.totalPrice} onChange={e => set('totalPrice', e.target.value)} inputMode="decimal"
+              placeholder="R$ 0,00" className={`w-full h-10 px-2.5 text-base ${field}`} />
+          </div>
+        </div>
+
+        {/* Observação */}
         <input
           value={form.obs}
           onChange={e => set('obs', e.target.value)}
           placeholder="Observação (opcional)"
-          className="w-full bg-gray-800 text-gray-300 px-4 py-2 rounded-xl outline-none mb-3 text-sm"
+          className={`w-full px-3 py-2 mb-3 text-base text-gray-300 ${field}`}
         />
 
-        {/* Category */}
-        <select value={form.category} onChange={e => { set('category', e.target.value); setCategoryError(false) }}
-          className={`w-full bg-gray-800 text-white px-4 py-3 rounded-xl outline-none mb-1 border-2 ${categoryError ? 'border-red-500' : 'border-transparent'}`}>
-          <option value="">Selecione uma categoria…</option>
-          {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-        </select>
-        {categoryError && <p className="text-red-400 text-xs mb-2 px-1">Escolha uma categoria para continuar</p>}
-
-        {/* Qty + Unit */}
-        <div className="flex gap-2 mb-3">
-          <div className="flex items-center bg-gray-800 rounded-xl flex-1">
-            <button onClick={() => set('qty', String(Math.max(0.1, (parsePrice(form.qty) || 0) - (form.unit === 'kg' || form.unit === 'l' ? 0.1 : 1))))}
-              className="px-4 py-3 text-white text-xl">−</button>
-            <input value={form.qty} onChange={e => set('qty', e.target.value)} inputMode="decimal"
-              className="flex-1 bg-transparent text-white text-center outline-none font-semibold" />
-            <button onClick={() => set('qty', String(Math.round(((parsePrice(form.qty) || 0) + (form.unit === 'kg' || form.unit === 'l' ? 0.1 : 1)) * 10) / 10))}
-              className="px-4 py-3 text-white text-xl">+</button>
-          </div>
-          <select value={form.unit} onChange={e => set('unit', e.target.value)}
-            className="bg-gray-800 text-white px-4 py-3 rounded-xl outline-none">
-            {UNITS.map(u => <option key={u}>{u}</option>)}
-          </select>
-        </div>
-
-        {/* Price */}
-        <div className="flex gap-2 mb-6">
-          <div className="flex-1">
-            <label className="text-gray-500 text-xs mb-1 block">Valor/{form.unit}</label>
-            <div className="flex items-center bg-gray-800 rounded-xl px-3">
-              <span className="text-gray-500 text-sm">R$</span>
-              <input value={form.pricePerUnit} onChange={e => set('pricePerUnit', e.target.value)} inputMode="decimal"
-                className="flex-1 bg-transparent text-white py-3 px-2 outline-none" />
-            </div>
-          </div>
-          <div className="flex-1">
-            <label className="text-gray-500 text-xs mb-1 block">Total</label>
-            <div className="flex items-center bg-gray-800 rounded-xl px-3">
-              <span className="text-gray-500 text-sm">R$</span>
-              <input value={form.totalPrice} onChange={e => set('totalPrice', e.target.value)} inputMode="decimal"
-                className="flex-1 bg-transparent text-white py-3 px-2 outline-none" />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <button onClick={onCancel}
-            className="flex-1 bg-gray-800 text-white font-semibold py-4 rounded-xl active:scale-95 transition-transform">
+            className="flex-1 bg-gray-800 text-white font-semibold py-3 rounded-xl active:scale-95 transition-transform">
             Cancelar
           </button>
           <button onClick={handleSave}
-            className="flex-1 bg-green-500 text-white font-semibold py-4 rounded-xl active:scale-95 transition-transform">
+            className="flex-[2] bg-green-500 text-white font-semibold py-3 rounded-xl active:scale-95 transition-transform">
             Salvar
           </button>
         </div>
