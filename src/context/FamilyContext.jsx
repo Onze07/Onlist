@@ -1,9 +1,11 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import {
-  doc, getDoc, setDoc, collection, writeBatch, arrayUnion, arrayRemove,
-  onSnapshot, serverTimestamp, updateDoc,
+  doc, getDoc, getDocs, setDoc, collection, writeBatch, arrayUnion, arrayRemove,
+  onSnapshot, serverTimestamp, updateDoc, deleteDoc,
 } from 'firebase/firestore'
-import { db } from '../firebase'
+import { deleteUser, reauthenticateWithPopup } from 'firebase/auth'
+import { db, googleProvider } from '../firebase'
+import { commitInChunks } from '../lib/firestore'
 import { useAuth } from './AuthContext'
 import { userPhoto } from '../lib/user'
 
@@ -42,6 +44,20 @@ export function FamilyProvider({ children }) {
   const [family, setFamily] = useState(null)
   const [profiles, setProfiles] = useState({})
   const [userLoading, setUserLoading] = useState(true)
+  const [userDoc, setUserDoc] = useState(undefined)
+  const deletingRef = useRef(false)
+
+  // Aceite dos termos, boas-vindas etc. (users/{uid}) em tempo real
+  useEffect(() => {
+    if (!user) {
+      setUserDoc(null)
+      return
+    }
+    setUserDoc(undefined)
+    return onSnapshot(doc(db, 'users', user.uid),
+      snap => setUserDoc(snap.exists() ? snap.data() : {}),
+      () => setUserDoc({}))
+  }, [user])
 
   // users/{uid} -> familyId
   useEffect(() => {
@@ -77,7 +93,9 @@ export function FamilyProvider({ children }) {
     }, () => {
       setFamily(null)
       setFamilyId(null)
-      setDoc(doc(db, 'users', user.uid), { familyId: null }, { merge: true }).catch(() => {})
+      if (!deletingRef.current) {
+        setDoc(doc(db, 'users', user.uid), { familyId: null }, { merge: true }).catch(() => {})
+      }
     })
     // Mantém nome/foto atualizados para os outros membros
     setDoc(doc(db, 'families', familyId, 'profiles', user.uid), profileData(user), { merge: true }).catch(() => {})
@@ -96,7 +114,7 @@ export function FamilyProvider({ children }) {
     }, () => {})
   }, [family?.id])
 
-  const loading = userLoading || (familyId && family === undefined)
+  const loading = userLoading || userDoc === undefined || (familyId && family === undefined)
   const isOwner = !!family && family.createdBy === user?.uid
   const isAdmin = isOwner || (!!family && (family.admins || []).includes(user?.uid))
   const seats = family?.plan?.seats ?? DEFAULT_SEATS
@@ -177,9 +195,57 @@ export function FamilyProvider({ children }) {
     setFamilyId(null)
   }
 
+  async function updateUserDoc(data) {
+    await setDoc(doc(db, 'users', user.uid), data, { merge: true })
+  }
+
+  // Exclusão de conta (LGPD). Confirma a identidade antes de apagar qualquer coisa.
+  async function deleteAccount() {
+    if (family && isOwner && family.members.length > 1) {
+      throw new Error('Você é o dono da família. Remova os outros membros antes de excluir sua conta.')
+    }
+    await reauthenticateWithPopup(user, googleProvider)
+    deletingRef.current = true
+    try {
+      if (family) {
+        const fid = family.id
+        if (isOwner) {
+          const ops = []
+          const lists = await getDocs(collection(db, 'families', fid, 'lists'))
+          for (const list of lists.docs) {
+            const entries = await getDocs(collection(list.ref, 'entries'))
+            entries.docs.forEach(d => ops.push(b => b.delete(d.ref)))
+            ops.push(b => b.delete(list.ref))
+          }
+          for (const sub of ['catalog', 'history', 'mercados', 'profiles']) {
+            const snap = await getDocs(collection(db, 'families', fid, sub))
+            snap.docs.forEach(d => ops.push(b => b.delete(d.ref)))
+          }
+          await commitInChunks(ops)
+          const batch = writeBatch(db)
+          if (family.code) batch.delete(doc(db, 'familyCodes', family.code))
+          batch.delete(doc(db, 'families', fid))
+          await batch.commit()
+        } else {
+          const batch = writeBatch(db)
+          batch.delete(doc(db, 'families', fid, 'profiles', user.uid))
+          batch.update(doc(db, 'families', fid), { members: arrayRemove(user.uid), admins: arrayRemove(user.uid) })
+          await batch.commit()
+        }
+        try { localStorage.removeItem(`lastList_${fid}`) } catch { /* ignora */ }
+      }
+
+      await deleteDoc(doc(db, 'users', user.uid))
+      await deleteUser(user)
+    } finally {
+      deletingRef.current = false
+    }
+  }
+
   return (
     <FamilyContext.Provider value={{
       familyId: family ? familyId : null, family, profiles, loading, isOwner, isAdmin, seats,
+      userDoc, updateUserDoc, deleteAccount,
       createFamily, joinFamily, renameFamily, regenerateCode, removeMember, setAdmin, leaveFamily,
     }}>
       {children}

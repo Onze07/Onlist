@@ -240,3 +240,38 @@ test('família legada sem admins: dono gerencia normalmente', async () => {
   })
   await assertSucceeds(updateDoc(doc(as('dan'), 'families/old'), { members: arrayRemove('eva'), admins: arrayRemove('eva') }))
 })
+
+// --- Exclusão de conta e feedback ---
+
+test('dono sozinho exclui a família e o código', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'families/solo'), { code: 'SOLO23', createdBy: 'sol', members: ['sol'] })
+    await setDoc(doc(ctx.firestore(), 'familyCodes/SOLO23'), { familyId: 'solo' })
+  })
+  const db = as('sol')
+  const batch = writeBatch(db)
+  batch.delete(doc(db, 'familyCodes/SOLO23'))
+  batch.delete(doc(db, 'families/solo'))
+  await assertSucceeds(batch.commit())
+})
+
+test('dono não exclui família com outros membros', async () => {
+  await assertFails(deleteDoc(doc(as('alice'), 'families/fam1')))
+})
+
+test('admin não exclui a família', async () => {
+  await assertFails(deleteDoc(doc(as('adam'), 'families/fam1')))
+})
+
+test('usuário apaga o próprio perfil de usuário', async () => {
+  await setDoc(doc(as('bob'), 'users/bob'), { familyId: null })
+  await assertSucceeds(deleteDoc(doc(as('bob'), 'users/bob')))
+})
+
+test('feedback: envia o próprio, não lê nem forja', async () => {
+  await assertSucceeds(setDoc(doc(as('bob'), 'feedback/f1'), { uid: 'bob', message: 'Ótimo app' }))
+  await assertFails(setDoc(doc(as('bob'), 'feedback/f2'), { uid: 'alice', message: 'forjado' }))
+  await assertFails(setDoc(doc(as('bob'), 'feedback/f3'), { uid: 'bob', message: '' }))
+  await assertFails(getDoc(doc(as('bob'), 'feedback/f1')))
+  await assertFails(setDoc(doc(env.unauthenticatedContext().firestore(), 'feedback/f4'), { uid: 'x', message: 'oi' }))
+})

@@ -5,6 +5,9 @@ import { useAuth } from '../context/AuthContext'
 import { useFamily } from '../context/FamilyContext'
 import { IconEdit, IconX } from '../components/Icon'
 import { userPhoto } from '../lib/user'
+import { useInstall } from '../lib/install'
+import InstallGuide from '../components/InstallGuide'
+import FeedbackSheet from '../components/FeedbackSheet'
 
 const APP_URL = typeof window !== 'undefined' ? window.location.origin : ''
 
@@ -38,8 +41,10 @@ export default function Account() {
   const user = useAuth()
   const {
     family, profiles, isOwner, isAdmin, seats,
-    renameFamily, regenerateCode, removeMember, setAdmin, leaveFamily,
+    renameFamily, regenerateCode, removeMember, setAdmin, leaveFamily, deleteAccount,
   } = useFamily()
+  const install = useInstall()
+  const [sheet, setSheet] = useState(null)
   const [editingName, setEditingName] = useState(false)
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -209,6 +214,41 @@ export default function Account() {
           </button>
         </div>
       )}
+
+      <Section title="App">
+        {!install.standalone && (install.canPrompt || install.ios) && (
+          <button onClick={() => (install.canPrompt ? install.promptInstall() : setSheet('install'))}
+            className="w-full text-left px-4 py-3 text-white text-sm border-b border-gray-800 flex justify-between">
+            Instalar o app <span className="text-gray-500">→</span>
+          </button>
+        )}
+        <button onClick={() => setSheet('feedback')}
+          className="w-full text-left px-4 py-3 text-white text-sm border-b border-gray-800 flex justify-between">
+          Enviar feedback <span className="text-gray-500">→</span>
+        </button>
+        <a href="#/termos" className="px-4 py-3 text-white text-sm border-b border-gray-800 flex justify-between">
+          Termos de Uso <span className="text-gray-500">→</span>
+        </a>
+        <a href="#/privacidade" className="px-4 py-3 text-white text-sm flex justify-between">
+          Política de Privacidade <span className="text-gray-500">→</span>
+        </a>
+      </Section>
+
+      <div className="px-4 pt-8 pb-4 text-center">
+        <button disabled={busy}
+          onClick={() => {
+            const msg = isOwner && family.members.length === 1
+              ? 'Excluir sua conta? Todas as listas, o catálogo e o histórico da família serão apagados para sempre.'
+              : 'Excluir sua conta? Você sai da família e seus dados pessoais são apagados.'
+            if (confirm(msg) && confirm('Tem certeza? Isso não pode ser desfeito.')) run(deleteAccount)
+          }}
+          className="text-red-400/80 text-xs underline underline-offset-2">
+          Excluir minha conta
+        </button>
+      </div>
+
+      {sheet === 'install' && <InstallGuide onClose={() => setSheet(null)} />}
+      {sheet === 'feedback' && <FeedbackSheet onClose={() => setSheet(null)} />}
     </div>
   )
 }
