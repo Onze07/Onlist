@@ -19,3 +19,17 @@ export function downloadFile(filename, content, type = 'text/csv;charset=utf-8')
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
+
+// Compras (history) → CSV, uma linha por item
+export function historyCsv(records) {
+  const rows = []
+  for (const r of records) {
+    const d = r.createdAt?.toDate ? r.createdAt.toDate() : null
+    const date = d ? d.toLocaleDateString('pt-BR') : ''
+    for (const item of r.items || []) {
+      rows.push([date, r.mercado, r.listName || '', item.name, item.category || '', item.qty, item.unit,
+        Number(item.pricePerUnit) || 0, Number(item.totalPrice) || 0])
+    }
+  }
+  return toCsv(['Data', 'Mercado', 'Lista', 'Item', 'Categoria', 'Quantidade', 'Unidade', 'Preço unitário', 'Total'], rows)
+}

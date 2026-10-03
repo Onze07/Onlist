@@ -3,7 +3,7 @@ import { collection, onSnapshot, orderBy, query, deleteDoc, doc } from 'firebase
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
 import { IconTrash, IconChevronDown, IconChevronRight, IconDownload } from '../components/Icon'
-import { toCsv, downloadFile } from '../lib/csv'
+import { historyCsv, downloadFile } from '../lib/csv'
 import { localDate } from '../lib/firestore'
 
 function fmt(n) {
@@ -45,17 +45,7 @@ export default function History() {
   }
 
   function exportCsv() {
-    const rows = []
-    for (const r of records) {
-      const d = r.createdAt?.toDate ? r.createdAt.toDate() : null
-      const date = d ? d.toLocaleDateString('pt-BR') : ''
-      for (const item of r.items || []) {
-        rows.push([date, r.mercado, r.listName || '', item.name, item.category || '', item.qty, item.unit,
-          Number(item.pricePerUnit) || 0, Number(item.totalPrice) || 0])
-      }
-    }
-    const csv = toCsv(['Data', 'Mercado', 'Lista', 'Item', 'Categoria', 'Quantidade', 'Unidade', 'Preço unitário', 'Total'], rows)
-    downloadFile(`onlist-compras-${localDate()}.csv`, csv)
+    downloadFile(`onlist-compras-${localDate()}.csv`, historyCsv(records))
   }
 
   // Group by month

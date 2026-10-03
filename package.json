@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test:rules": "npx -y firebase-tools@15 emulators:exec --only firestore --project onlist-test \"node --test tests/firestore.rules.test.js\""
+    "test:rules": "npx -y firebase-tools@15 emulators:exec --only firestore --project onlist-test \"node --test tests/firestore.rules.test.js\"",
+    "test": "node --test tests/lib.test.js"
   },
   "dependencies": {
     "firebase": "^12.15.0",

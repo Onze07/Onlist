@@ -4,11 +4,14 @@ import {
   doc, setDoc, serverTimestamp, getDocs, query, orderBy
 } from 'firebase/firestore'
 import { db } from '../firebase'
-import { commitInChunks, localDate, normalizePriceHistory, parsePrice } from '../lib/firestore'
+import { commitInChunks, localDate, normalizePriceHistory } from '../lib/firestore'
 import { useFamily } from '../context/FamilyContext'
 import { useAuth } from '../context/AuthContext'
 import ItemForm from '../components/ItemForm'
 import ListManager from '../components/ListManager'
+import MoneyInput from '../components/MoneyInput'
+import CompareMarkets from '../components/CompareMarkets'
+import { cheapest } from '../lib/prices'
 import { IconChevronDown, IconCheck, IconPlus, IconX } from '../components/Icon'
 
 const CATEGORY_ORDER = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
@@ -18,8 +21,10 @@ function fmt(n) {
 }
 
 export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled }) {
-  const { familyId } = useFamily()
+  const { familyId, userDoc } = useFamily()
   const user = useAuth()
+  const decimals = userDoc?.priceDecimals === 3 ? 3 : 2
+  const [showCompare, setShowCompare] = useState(false)
   const [listId, setListId] = useState(null)
   const [listName, setListName] = useState('')
   const [entries, setEntries] = useState([])
@@ -143,7 +148,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     if (priceOverride > 0) {
       const qty = Number(entry.qty) || 1
       updates.pricePerUnit = priceOverride
-      updates.totalPrice = priceOverride * qty
+      updates.totalPrice = Math.round(priceOverride * qty * 100) / 100
     }
     await updateDoc(doc(db, 'families', familyId, 'lists', listId, 'entries', entry.id), updates)
   }
@@ -180,12 +185,14 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     }
   }
 
-  async function handleSave(data) {
+  async function handleSave(data, { inCart = false } = {}) {
     const col = collection(db, 'families', familyId, 'lists', listId, 'entries')
     if (editItem) {
       await updateDoc(doc(db, 'families', familyId, 'lists', listId, 'entries', editItem.id), data)
     } else {
-      await addDoc(col, { ...data, checked: false, createdAt: serverTimestamp() })
+      // "Já está no carrinho": entra direto em "Peguei"
+      const checkedFields = inCart ? { checked: true, checkedBy: user.uid, checkedAt: serverTimestamp() } : { checked: false }
+      await addDoc(col, { ...data, ...checkedFields, createdAt: serverTimestamp() })
     }
     // Só atualiza o último preço; o histórico é gravado ao finalizar a compra (preço pago + mercado)
     if (data.pricePerUnit > 0) {
@@ -212,6 +219,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
         createdAt: serverTimestamp(),
         mercado: mercadoName,
         listName,
+        finishedBy: user.uid,
         total: totalChecked,
         items: checked.map(e => ({ name: e.name, qty: e.qty, unit: e.unit, totalPrice: e.totalPrice, pricePerUnit: e.pricePerUnit, category: e.category })),
       }),
@@ -312,6 +320,11 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
               Limpar pendentes
             </button>
           )}
+          {entries.length > 0 && (
+            <button onClick={() => setShowCompare(true)} className="text-xs text-gray-400 flex items-center gap-1 px-2 py-1 rounded-md hover:bg-gray-800">
+              Comparar mercados
+            </button>
+          )}
           {checked.length > 0 && (
             <button onClick={() => setFinishing(true)}
               className="ml-auto text-xs text-green-400 font-semibold px-3 py-1 rounded-md bg-green-500/10">
@@ -341,6 +354,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
                 ? entry.pricePerUnit - lastPrice : null
               return (
                 <EntryRow key={entry.id} entry={entry} priceDiff={priceDiff}
+                  cheaper={cheaperHint(entry, catalogItem)}
                   isLast={i === items.length - 1}
                   onCheck={() => toggleCheck(entry)}
                   onEdit={() => { setEditItem(entry); setPrefillItem(null); setShowForm(true) }}
@@ -385,11 +399,16 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
 
       {pricePrompt && (
         <PricePromptModal
+          decimals={decimals}
           entry={pricePrompt}
           onConfirm={(price) => { doCheck(pricePrompt, price); setPricePrompt(null) }}
           onSkip={() => { doCheck(pricePrompt, 0); setPricePrompt(null) }}
           onCancel={() => setPricePrompt(null)}
         />
+      )}
+
+      {showCompare && (
+        <CompareMarkets entries={entries} catalog={catalog} onClose={() => setShowCompare(false)} />
       )}
 
       {showManager && (
@@ -407,7 +426,16 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   )
 }
 
-function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked, priceDiff }) {
+// Outro mercado mais barato que o preço anotado (ou o melhor preço, se o item não tem preço)
+function cheaperHint(entry, catalogItem) {
+  const best = cheapest(catalogItem?.priceHistory)
+  if (!best) return null
+  const current = Number(entry.pricePerUnit) || 0
+  if (current > 0 && best.price >= current - 0.005) return null
+  return best
+}
+
+function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked, priceDiff, cheaper }) {
   return (
     <div className={`flex items-center gap-3 px-4 py-2.5 ${!isLast ? 'border-b border-gray-800/60' : ''}`}>
       <button onClick={onCheck}
@@ -428,6 +456,11 @@ function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked
             </span>
           )}
         </div>
+        {cheaper && (
+          <div className="text-[11px] text-emerald-400/80 mt-0.5 truncate">
+            {Number(cheaper.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} no {cheaper.mercado}
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-3 flex-shrink-0">
@@ -444,8 +477,8 @@ function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked
   )
 }
 
-function PricePromptModal({ entry, onConfirm, onSkip, onCancel }) {
-  const [price, setPrice] = useState('')
+function PricePromptModal({ entry, decimals, onConfirm, onSkip, onCancel }) {
+  const [price, setPrice] = useState(0)
 
   return (
     <div className="fixed inset-0 bg-black/75 z-50 flex items-end" onClick={onCancel}>
@@ -460,13 +493,13 @@ function PricePromptModal({ entry, onConfirm, onSkip, onCancel }) {
 
         <div className="flex items-center bg-gray-800 rounded-xl px-4 mb-5 border border-gray-700">
           <span className="text-gray-400 text-base mr-2">R$</span>
-          <input
+          <MoneyInput
             autoFocus
             value={price}
-            onChange={e => setPrice(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && price && onConfirm(parsePrice(price))}
-            inputMode="decimal"
-            placeholder="0,00"
+            onChange={setPrice}
+            decimals={decimals}
+            onKeyDown={e => e.key === 'Enter' && price > 0 && onConfirm(price)}
+            placeholder={(0).toFixed(decimals).replace('.', ',')}
             className="flex-1 bg-transparent text-white text-xl py-4 outline-none"
           />
         </div>
@@ -477,9 +510,9 @@ function PricePromptModal({ entry, onConfirm, onSkip, onCancel }) {
             Marcar sem valor
           </button>
           <button
-            onClick={() => price ? onConfirm(parsePrice(price)) : onSkip()}
+            onClick={() => price > 0 ? onConfirm(price) : onSkip()}
             className="flex-1 bg-green-500 text-white font-semibold py-3.5 rounded-xl text-sm">
-            {price ? 'Confirmar' : 'Pular'}
+            {price > 0 ? 'Confirmar' : 'Pular'}
           </button>
         </div>
       </div>

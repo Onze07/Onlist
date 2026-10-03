@@ -42,7 +42,9 @@ export default function Account() {
   const {
     family, profiles, isOwner, isAdmin, seats,
     renameFamily, regenerateCode, removeMember, setAdmin, leaveFamily, deleteAccount,
+    userDoc, updateUserDoc,
   } = useFamily()
+  const decimals = userDoc?.priceDecimals === 3 ? 3 : 2
   const install = useInstall()
   const [sheet, setSheet] = useState(null)
   const [editingName, setEditingName] = useState(false)
@@ -216,6 +218,20 @@ export default function Account() {
       )}
 
       <Section title="App">
+        <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-white text-sm">Casas decimais do preço</p>
+            <p className="text-gray-500 text-xs">Ao digitar 599: {decimals === 3 ? '0,599' : '5,99'}</p>
+          </div>
+          <div className="flex bg-gray-900 rounded-lg p-0.5 border border-gray-700">
+            {[2, 3].map(n => (
+              <button key={n} onClick={() => updateUserDoc({ priceDecimals: n }).catch(e => alert('Erro: ' + e.message))}
+                className={`px-3 py-1 text-sm rounded-md ${decimals === n ? 'bg-green-500 text-white' : 'text-gray-400'}`}>
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
         {!install.standalone && (install.canPrompt || install.ios) && (
           <button onClick={() => (install.canPrompt ? install.promptInstall() : setSheet('install'))}
             className="w-full text-left px-4 py-3 text-white text-sm border-b border-gray-800 flex justify-between">

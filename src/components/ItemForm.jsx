@@ -3,7 +3,9 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
 import { parsePrice } from '../lib/firestore'
+import { roundTo } from '../lib/money'
 import { useVisualViewport } from '../lib/useVisualViewport'
+import MoneyInput from './MoneyInput'
 
 function fmtBRL(n) {
   return Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -12,11 +14,22 @@ function fmtBRL(n) {
 const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
 const UNITS = ['un', 'kg', 'g', 'dz', 'ml', 'l']
 
-const empty = { name: '', obs: '', category: 'Mercearia', qty: '1', unit: 'un', pricePerUnit: '', totalPrice: '' }
+const empty = { name: '', obs: '', category: 'Mercearia', qty: '1', unit: 'un', pricePerUnit: 0, totalPrice: 0 }
+
+// Lembra "Já está no carrinho" enquanto o app estiver aberto (cadastro em série no mercado)
+let lastInCart = false
 
 export default function ItemForm({ onSave, onCancel, initial }) {
-  const { familyId } = useFamily()
-  const [form, setForm] = useState(initial ? { ...initial, qty: String(initial.qty), pricePerUnit: String(initial.pricePerUnit || ''), totalPrice: String(initial.totalPrice || '') } : empty)
+  const { familyId, userDoc } = useFamily()
+  const decimals = userDoc?.priceDecimals === 3 ? 3 : 2
+  const isNew = !initial?.id
+  const [inCart, setInCart] = useState(isNew && lastInCart)
+  const [form, setForm] = useState(initial ? {
+    ...initial,
+    qty: String(initial.qty).replace('.', ','),
+    pricePerUnit: Number(initial.pricePerUnit) || 0,
+    totalPrice: Number(initial.totalPrice) || 0,
+  } : empty)
   const [catalog, setCatalog] = useState([])
   const [suggestions, setSuggestions] = useState([])
   const viewport = useVisualViewport()
@@ -32,13 +45,11 @@ export default function ItemForm({ onSave, onCancel, initial }) {
     setForm(prev => {
       const next = { ...prev, [field]: value }
       if (field === 'qty' || field === 'pricePerUnit') {
-        const q = parsePrice(next.qty) || 0
-        const p = parsePrice(next.pricePerUnit) || 0
-        next.totalPrice = (q * p).toFixed(2)
+        next.totalPrice = roundTo((parsePrice(next.qty) || 0) * (next.pricePerUnit || 0), 2)
       }
       if (field === 'totalPrice') {
         const q = parsePrice(next.qty) || 0
-        if (q > 0) next.pricePerUnit = (parsePrice(value) / q).toFixed(2)
+        if (q > 0) next.pricePerUnit = roundTo(value / q, decimals)
       }
       return next
     })
@@ -56,8 +67,8 @@ export default function ItemForm({ onSave, onCancel, initial }) {
       name: item.name,
       category: item.category || prev.category,
       unit: item.unit || prev.unit,
-      pricePerUnit: String(item.lastPrice || ''),
-      totalPrice: String(((parsePrice(prev.qty) || 0) * (item.lastPrice || 0)).toFixed(2)),
+      pricePerUnit: Number(item.lastPrice) || 0,
+      totalPrice: roundTo((parsePrice(prev.qty) || 0) * (Number(item.lastPrice) || 0), 2),
     }))
     setSuggestions([])
   }
@@ -68,15 +79,16 @@ export default function ItemForm({ onSave, onCancel, initial }) {
     if (!form.name.trim()) return
     if (!form.category) { setCategoryError(true); return }
     setCategoryError(false)
+    if (isNew) lastInCart = inCart
     onSave({
       name: form.name.trim(),
-      obs: form.obs.trim(),
+      obs: (form.obs || '').trim(),
       category: form.category,
       qty: parsePrice(form.qty) || 1,
       unit: form.unit,
-      pricePerUnit: parsePrice(form.pricePerUnit) || 0,
-      totalPrice: parsePrice(form.totalPrice) || 0,
-    })
+      pricePerUnit: Number(form.pricePerUnit) || 0,
+      totalPrice: Number(form.totalPrice) || 0,
+    }, { inCart: isNew && inCart })
   }
 
   const step = form.unit === 'kg' || form.unit === 'l' ? 0.1 : 1
@@ -133,23 +145,23 @@ export default function ItemForm({ onSave, onCancel, initial }) {
           <div>
             <label className="text-gray-500 text-[11px] mb-0.5 block px-1">Qtd</label>
             <div className="flex items-center bg-gray-800 rounded-xl h-10">
-              <button type="button" onClick={() => set('qty', String(Math.max(step, Math.round(((parsePrice(form.qty) || 0) - step) * 10) / 10)))}
+              <button type="button" onClick={() => set('qty', String(Math.max(step, Math.round(((parsePrice(form.qty) || 0) - step) * 10) / 10)).replace('.', ','))}
                 className="w-8 h-full text-white text-lg flex-shrink-0">−</button>
               <input value={form.qty} onChange={e => set('qty', e.target.value)} inputMode="decimal"
                 className="w-full min-w-0 bg-transparent text-white text-center outline-none font-semibold text-base" />
-              <button type="button" onClick={() => set('qty', String(Math.round(((parsePrice(form.qty) || 0) + step) * 10) / 10))}
+              <button type="button" onClick={() => set('qty', String(Math.round(((parsePrice(form.qty) || 0) + step) * 10) / 10).replace('.', ','))}
                 className="w-8 h-full text-white text-lg flex-shrink-0">+</button>
             </div>
           </div>
           <div>
             <label className="text-gray-500 text-[11px] mb-0.5 block px-1">Valor/{form.unit}</label>
-            <input value={form.pricePerUnit} onChange={e => set('pricePerUnit', e.target.value)} inputMode="decimal"
-              placeholder="R$ 0,00" className={`w-full h-10 px-2.5 text-base ${field}`} />
+            <MoneyInput value={form.pricePerUnit} onChange={v => set('pricePerUnit', v)} decimals={decimals}
+              className={`w-full h-10 px-2.5 text-base ${field}`} />
           </div>
           <div>
             <label className="text-gray-500 text-[11px] mb-0.5 block px-1">Total</label>
-            <input value={form.totalPrice} onChange={e => set('totalPrice', e.target.value)} inputMode="decimal"
-              placeholder="R$ 0,00" className={`w-full h-10 px-2.5 text-base ${field}`} />
+            <MoneyInput value={form.totalPrice} onChange={v => set('totalPrice', v)} decimals={2}
+              className={`w-full h-10 px-2.5 text-base ${field}`} />
           </div>
         </div>
 
@@ -160,6 +172,16 @@ export default function ItemForm({ onSave, onCancel, initial }) {
           placeholder="Observação (opcional)"
           className={`w-full px-3 py-2 mb-3 text-base text-gray-300 ${field}`}
         />
+
+        {isNew && (
+          <button type="button" onClick={() => setInCart(v => !v)}
+            className="w-full flex items-center justify-between mb-3 px-1" aria-pressed={inCart}>
+            <span className={`text-sm ${inCart ? 'text-green-400' : 'text-gray-400'}`}>Já está no carrinho</span>
+            <span className={`w-11 h-6 rounded-full p-0.5 transition-colors ${inCart ? 'bg-green-500' : 'bg-gray-700'}`}>
+              <span className={`block w-5 h-5 rounded-full bg-white transition-transform ${inCart ? 'translate-x-5' : ''}`} />
+            </span>
+          </button>
+        )}
 
         <div className="flex gap-2">
           <button onClick={onCancel}
