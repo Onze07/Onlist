@@ -12,6 +12,8 @@ import ListManager from '../components/ListManager'
 import MoneyInput from '../components/MoneyInput'
 import CompareMarkets from '../components/CompareMarkets'
 import PresenceBanner from '../components/PresenceBanner'
+import NotifySheet from '../components/NotifySheet'
+import { sendNotify } from '../lib/push'
 import { useOnline, useWriteErrors } from '../lib/useSync'
 import { usePresence } from '../lib/usePresence'
 import { cheapest } from '../lib/prices'
@@ -48,6 +50,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   const writeError = useWriteErrors()
   const othersShopping = usePresence(familyId, user?.uid)
   const presenceWrittenAt = useRef(0)
+  const [showNotify, setShowNotify] = useState(false)
   const finishingRef = useRef(false)
 
   // Load last list: usa a salva neste aparelho, senão a primeira ativa, senão cria a padrão
@@ -149,6 +152,10 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       ...(first ? { startedAt: serverTimestamp() } : {}),
       updatedAt: serverTimestamp(),
     }, { merge: true }), 'avisar a família')
+    // Primeiro item marcado: avisa no celular dos outros (o servidor limita a 1 aviso a cada 30 min)
+    if (first && navigator.onLine) {
+      sendNotify({ familyId, type: 'shopping', listName }).catch(() => {})
+    }
   }
 
   function clearShopping() {
@@ -377,6 +384,11 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
               Limpar pendentes
             </button>
           )}
+          {pending.length > 0 && (
+            <button onClick={() => setShowNotify(true)} className="text-xs text-gray-400 flex items-center gap-1 px-2 py-1 rounded-md hover:bg-gray-800">
+              Avisar
+            </button>
+          )}
           {entries.length > 0 && (
             <button onClick={() => setShowCompare(true)} className="text-xs text-gray-400 flex items-center gap-1 px-2 py-1 rounded-md hover:bg-gray-800">
               Comparar mercados
@@ -455,6 +467,10 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       </div>
 
       {overlays}
+
+      {showNotify && (
+        <NotifySheet listName={listName} pendingCount={pending.length} onClose={() => setShowNotify(false)} />
+      )}
 
       {showCompare && (
         <CompareMarkets entries={entries} catalog={catalog} onClose={() => setShowCompare(false)} />

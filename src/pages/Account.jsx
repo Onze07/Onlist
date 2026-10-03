@@ -8,6 +8,7 @@ import { userPhoto } from '../lib/user'
 import { useInstall } from '../lib/install'
 import InstallGuide from '../components/InstallGuide'
 import FeedbackSheet from '../components/FeedbackSheet'
+import { pushStatus, enablePush, disablePush } from '../lib/push'
 
 const APP_URL = typeof window !== 'undefined' ? window.location.origin : ''
 
@@ -47,6 +48,7 @@ export default function Account() {
   const decimals = userDoc?.priceDecimals === 3 ? 3 : 2
   const install = useInstall()
   const [sheet, setSheet] = useState(null)
+  const [push, setPush] = useState(() => pushStatus())
   const [editingName, setEditingName] = useState(false)
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -216,6 +218,48 @@ export default function Account() {
           </button>
         </div>
       )}
+
+      <Section title="Notificações">
+        <div className="px-4 py-3 border-b border-gray-800">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-white text-sm">Avisos neste aparelho</p>
+              <p className="text-gray-500 text-xs">
+                {{
+                  enabled: 'Ativados',
+                  off: 'Desativados',
+                  denied: 'Bloqueados nas configurações do aparelho',
+                  'ios-install': 'No iPhone, instale o app na tela inicial primeiro',
+                  unsupported: 'Este navegador não aceita notificações',
+                  unconfigured: 'Em configuração',
+                }[push]}
+              </p>
+            </div>
+            {push === 'off' && (
+              <button disabled={busy} onClick={() => run(async () => { await enablePush(user, family.id); setPush(pushStatus()) })}
+                className="bg-green-500 text-white text-sm font-semibold px-3 py-1.5 rounded-lg flex-shrink-0">Ativar</button>
+            )}
+            {push === 'enabled' && (
+              <button disabled={busy} onClick={() => run(async () => { await disablePush(user, family.id); setPush(pushStatus()) })}
+                className="text-gray-400 text-sm border border-gray-700 px-3 py-1.5 rounded-lg flex-shrink-0">Desativar</button>
+            )}
+            {push === 'ios-install' && (
+              <button onClick={() => setSheet('install')}
+                className="text-green-400 text-sm border border-green-500/40 px-3 py-1.5 rounded-lg flex-shrink-0">Como?</button>
+            )}
+          </div>
+        </div>
+        <button onClick={() => updateUserDoc({ notifyShopping: userDoc?.notifyShopping === false }).catch(e => alert('Erro: ' + e.message))}
+          className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left" aria-pressed={userDoc?.notifyShopping !== false}>
+          <span>
+            <span className="text-white text-sm block">Quando alguém começar a comprar</span>
+            <span className="text-gray-500 text-xs">"Ana está no mercado"</span>
+          </span>
+          <span className={`w-11 h-6 rounded-full p-0.5 transition-colors flex-shrink-0 ${userDoc?.notifyShopping !== false ? 'bg-green-500' : 'bg-gray-700'}`}>
+            <span className={`block w-5 h-5 rounded-full bg-white transition-transform ${userDoc?.notifyShopping !== false ? 'translate-x-5' : ''}`} />
+          </span>
+        </button>
+      </Section>
 
       <Section title="App">
         <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between gap-3">
