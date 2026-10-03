@@ -5,12 +5,24 @@ import { db } from '../firebase'
 const BATCH_LIMIT = 450
 
 // ops: lista de funções (batch) => void
-export async function commitInChunks(ops) {
+// Todos os lotes são enfileirados na hora (funciona offline); a promessa resolve quando o servidor confirmar.
+export function commitInChunks(ops) {
+  const commits = []
   for (let i = 0; i < ops.length; i += BATCH_LIMIT) {
     const batch = writeBatch(db)
     ops.slice(i, i + BATCH_LIMIT).forEach(op => op(batch))
-    await batch.commit()
+    commits.push(batch.commit())
   }
+  return Promise.all(commits)
+}
+
+// Grava sem esperar o servidor. Offline, o Firestore guarda na fila e sincroniza depois;
+// esperar a promessa travaria a tela até a internet voltar.
+export function queueWrite(promise, what = 'salvar') {
+  Promise.resolve(promise).catch(e => {
+    console.error(`Erro ao ${what}`, e)
+    window.dispatchEvent(new CustomEvent('onlist:write-error', { detail: { what, message: e.message } }))
+  })
 }
 
 // Reexporta as funções puras para manter os imports existentes

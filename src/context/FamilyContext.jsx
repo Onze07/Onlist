@@ -177,6 +177,7 @@ export function FamilyProvider({ children }) {
     const batch = writeBatch(db)
     batch.update(doc(db, 'families', family.id), { members: arrayRemove(uid), admins: arrayRemove(uid) })
     batch.delete(doc(db, 'families', family.id, 'profiles', uid))
+    batch.delete(doc(db, 'families', family.id, 'presence', uid))
     await batch.commit()
   }
 
@@ -188,6 +189,7 @@ export function FamilyProvider({ children }) {
     const fid = family.id
     const batch = writeBatch(db)
     batch.delete(doc(db, 'families', fid, 'profiles', user.uid))
+    batch.delete(doc(db, 'families', fid, 'presence', user.uid))
     batch.update(doc(db, 'families', fid), { members: arrayRemove(user.uid), admins: arrayRemove(user.uid) })
     batch.set(doc(db, 'users', user.uid), { familyId: null }, { merge: true })
     await batch.commit()
@@ -217,7 +219,7 @@ export function FamilyProvider({ children }) {
             entries.docs.forEach(d => ops.push(b => b.delete(d.ref)))
             ops.push(b => b.delete(list.ref))
           }
-          for (const sub of ['catalog', 'history', 'mercados', 'profiles']) {
+          for (const sub of ['catalog', 'history', 'mercados', 'profiles', 'presence']) {
             const snap = await getDocs(collection(db, 'families', fid, sub))
             snap.docs.forEach(d => ops.push(b => b.delete(d.ref)))
           }
@@ -229,6 +231,7 @@ export function FamilyProvider({ children }) {
         } else {
           const batch = writeBatch(db)
           batch.delete(doc(db, 'families', fid, 'profiles', user.uid))
+          batch.delete(doc(db, 'families', fid, 'presence', user.uid))
           batch.update(doc(db, 'families', fid), { members: arrayRemove(user.uid), admins: arrayRemove(user.uid) })
           await batch.commit()
         }

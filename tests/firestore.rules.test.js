@@ -275,3 +275,40 @@ test('feedback: envia o próprio, não lê nem forja', async () => {
   await assertFails(getDoc(doc(as('bob'), 'feedback/f1')))
   await assertFails(setDoc(doc(env.unauthenticatedContext().firestore(), 'feedback/f4'), { uid: 'x', message: 'oi' }))
 })
+
+// --- Presença (modo mercado) ---
+
+test('presença: membro grava e apaga a própria', async () => {
+  const db = as('mia')
+  await assertSucceeds(setDoc(doc(db, 'families/fam1/presence/mia'), { name: 'Mia', mercado: 'X' }))
+  await assertSucceeds(getDoc(doc(as('adam'), 'families/fam1/presence/mia')))
+  await assertSucceeds(deleteDoc(doc(db, 'families/fam1/presence/mia')))
+})
+
+test('presença: não grava a de outra pessoa', async () => {
+  await assertFails(setDoc(doc(as('mia'), 'families/fam1/presence/adam'), { name: 'Falso' }))
+})
+
+test('presença: não membro não lê nem grava', async () => {
+  await assertFails(getDoc(doc(as('mallory'), 'families/fam1/presence/mia')))
+  await assertFails(setDoc(doc(as('mallory'), 'families/fam1/presence/mallory'), { name: 'M' }))
+})
+
+test('presença: admin apaga a de quem removeu', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'families/fam1/presence/mia'), { name: 'Mia' })
+  })
+  const db = as('adam')
+  const batch = writeBatch(db)
+  batch.update(doc(db, 'families/fam1'), { members: arrayRemove('mia'), admins: arrayRemove('mia') })
+  batch.delete(doc(db, 'families/fam1/presence/mia'))
+  batch.delete(doc(db, 'families/fam1/profiles/mia'))
+  await assertSucceeds(batch.commit())
+})
+
+test('presença: membro comum não apaga a de outro', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'families/fam1/presence/adam'), { name: 'Adam' })
+  })
+  await assertFails(deleteDoc(doc(as('mia'), 'families/fam1/presence/adam')))
+})
