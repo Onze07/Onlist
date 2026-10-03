@@ -17,6 +17,7 @@ npm run dev
 | `npm run dev` | servidor local |
 | `npm run build` | build de produção em `dist/` |
 | `npm run lint` | oxlint |
+| `npm test` | testes das funções (preços, períodos, máscara de valor, avisos) |
 | `npm run test:rules` | testa `firestore.rules` no emulador (precisa de Java) |
 
 ## Deploy
@@ -30,6 +31,17 @@ São dois deploys independentes:
 - Merge em `main` → deploy de **produção**.
 - Variáveis `VITE_FIREBASE_*` ficam em Vercel → Settings → Environment Variables.
 - Login Google em URL nova: adicionar o domínio em Firebase Console → Authentication → Settings → Authorized domains.
+
+### Avisos push (Firebase Cloud Messaging)
+
+Variáveis na Vercel (Settings → Environment Variables, Production e Preview):
+
+| Variável | Onde pegar |
+|---|---|
+| `VITE_FIREBASE_VAPID_KEY` | Firebase Console → Configurações do projeto → Cloud Messaging → Certificados push da Web → Gerar par de chaves (chave pública) |
+| `FIREBASE_SERVICE_ACCOUNT` | Firebase Console → Configurações do projeto → Contas de serviço → Gerar nova chave privada (cole o JSON inteiro; marque como Sensitive) |
+
+Depois de salvar, faça um novo deploy. A função `api/notify.js` envia os avisos; `src/sw.js` os exibe.
 
 ### 2. Regras do Firestore — Firebase CLI (manual)
 
