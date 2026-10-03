@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { collection, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
 
-const STALE_MS = 3 * 60 * 60 * 1000
+// Sem marcar itens há 45 min = já saiu do mercado
+const STALE_MS = 45 * 60 * 1000
 
-// Outros membros no modo mercado agora (ignora presença sem atualização há mais de 3 h)
+// Outros membros marcando itens agora (estão no mercado)
 export function usePresence(familyId, uid) {
   const [docs, setDocs] = useState([])
   const [, tick] = useState(0)

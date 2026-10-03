@@ -11,7 +11,6 @@ import ItemForm from '../components/ItemForm'
 import ListManager from '../components/ListManager'
 import MoneyInput from '../components/MoneyInput'
 import CompareMarkets from '../components/CompareMarkets'
-import ShoppingMode, { StartShopping } from '../components/ShoppingMode'
 import PresenceBanner from '../components/PresenceBanner'
 import { useOnline, useWriteErrors } from '../lib/useSync'
 import { usePresence } from '../lib/usePresence'
@@ -44,12 +43,11 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   const [mercadoFocused, setMercadoFocused] = useState(false)
   const [pricePrompt, setPricePrompt] = useState(null) // entry awaiting price before check
   const [saving, setSaving] = useState(false)
-  const [shopping, setShopping] = useState(null) // { mercado } no modo mercado
-  const [showStart, setShowStart] = useState(false)
   const [pendingSync, setPendingSync] = useState(false)
   const online = useOnline()
   const writeError = useWriteErrors()
   const othersShopping = usePresence(familyId, user?.uid)
+  const presenceWrittenAt = useRef(0)
   const finishingRef = useRef(false)
 
   // Load last list: usa a salva neste aparelho, senão a primeira ativa, senão cria a padrão
@@ -97,32 +95,6 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     })
   }, [familyId, listId])
 
-  // Modo mercado: reabre se o app fechou no meio da compra
-  useEffect(() => {
-    if (!familyId || !listId) return
-    try {
-      const saved = JSON.parse(localStorage.getItem(`shopping_${familyId}`))
-      if (saved?.listId === listId) setShopping({ mercado: saved.mercado || '' })
-    } catch { /* ignora */ }
-  }, [familyId, listId])
-
-  // Presença: "fulano está no mercado" (renova a cada 5 min)
-  useEffect(() => {
-    if (!shopping || !familyId || !user) return
-    const ref = doc(db, 'families', familyId, 'presence', user.uid)
-    const write = (first) => queueWrite(setDoc(ref, {
-      name: user.displayName || user.email,
-      mercado: shopping.mercado || null,
-      listName: listName || null,
-      listId: listId || null,
-      ...(first ? { startedAt: serverTimestamp() } : {}),
-      updatedAt: serverTimestamp(),
-    }, { merge: true }), 'avisar a família')
-    write(true)
-    const t = setInterval(() => write(false), 5 * 60 * 1000)
-    return () => clearInterval(t)
-  }, [shopping, familyId, user, listName, listId])
-
   // Load catalog for price signals
   useEffect(() => {
     if (!familyId) return
@@ -165,16 +137,22 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     return doc(db, 'families', familyId, 'lists', listId, 'entries', id)
   }
 
-  function startShopping(mercadoName) {
-    setShowStart(false)
-    setShopping({ mercado: mercadoName })
-    setMercado(mercadoName)
-    try { localStorage.setItem(`shopping_${familyId}`, JSON.stringify({ listId, mercado: mercadoName })) } catch { /* ignora */ }
+  // Marcar itens = está no mercado: avisa a família (no máximo 1 gravação a cada 2 min)
+  function markShopping() {
+    const now = Date.now()
+    if (now - presenceWrittenAt.current < 2 * 60 * 1000) return
+    const first = presenceWrittenAt.current === 0
+    presenceWrittenAt.current = now
+    queueWrite(setDoc(doc(db, 'families', familyId, 'presence', user.uid), {
+      name: user.displayName || user.email,
+      listId, listName: listName || null,
+      ...(first ? { startedAt: serverTimestamp() } : {}),
+      updatedAt: serverTimestamp(),
+    }, { merge: true }), 'avisar a família')
   }
 
-  function exitShopping() {
-    setShopping(null)
-    try { localStorage.removeItem(`shopping_${familyId}`) } catch { /* ignora */ }
+  function clearShopping() {
+    presenceWrittenAt.current = 0
     queueWrite(deleteDoc(doc(db, 'families', familyId, 'presence', user.uid)), 'atualizar presença')
   }
 
@@ -202,6 +180,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       updates.totalPrice = Math.round(priceOverride * qty * 100) / 100
     }
     queueWrite(updateDoc(entryRef(entry.id), updates), 'marcar item')
+    markShopping()
   }
 
   function toggleCheck(entry) {
@@ -237,6 +216,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       // "Já está no carrinho": entra direto em "Peguei"
       const checkedFields = inCart ? { checked: true, checkedBy: user.uid, checkedAt: serverTimestamp() } : { checked: false }
       queueWrite(addDoc(col, { ...data, ...checkedFields, createdAt: serverTimestamp() }), 'adicionar item')
+      if (inCart) markShopping()
     }
     // Só atualiza o último preço; o histórico é gravado ao finalizar a compra (preço pago + mercado)
     if (data.pricePerUnit > 0) {
@@ -292,7 +272,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     // Enfileira tudo de uma vez: offline a compra fica salva e sobe quando a conexão voltar
     queueWrite(commitInChunks(ops), 'registrar compra')
     setFinishing(false); setMercado(''); setSaving(false)
-    if (shopping) exitShopping()
+    clearShopping()
   }
 
   const mercadoFiltered = mercadoOptions.filter(m => m.toLowerCase().includes(mercado.toLowerCase()))
@@ -307,7 +287,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
           <p className="text-gray-400 text-sm mb-5">{checked.length} itens · {fmt(totalChecked)}</p>
           {othersOnList.length > 0 && (
             <p className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs rounded-xl px-3 py-2 mb-4">
-              {othersOnList.map(p => p.name?.split(' ')[0]).join(', ')} também está no modo mercado com esta lista.
+              {othersOnList.map(p => p.name?.split(' ')[0]).join(', ')} também está marcando itens desta lista agora.
               Combinem quem finaliza, para a compra não ser registrada duas vezes.
             </p>
           )}
@@ -352,15 +332,10 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       {showForm && (
         <ItemForm
           initial={prefillItem || editItem}
-          defaultInCart={!!shopping}
           onDelete={editItem ? () => { handleDelete(editItem.id); setShowForm(false); setEditItem(null) } : undefined}
           onSave={handleSave}
           onCancel={() => { setShowForm(false); setEditItem(null); setPrefillItem(null) }}
         />
-      )}
-      {showStart && (
-        <StartShopping options={mercadoOptions} initial={shopping?.mercado || ''}
-          onStart={startShopping} onClose={() => setShowStart(false)} />
       )}
       {writeError && (
         <div className="fixed top-3 inset-x-3 z-[60] max-w-lg mx-auto bg-red-500/90 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl">
@@ -369,30 +344,6 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       )}
     </>
   )
-
-  if (shopping) {
-    return (
-      <>
-        <ShoppingMode
-          listName={listName}
-          mercado={shopping.mercado}
-          pending={pending}
-          checked={checked}
-          catalog={catalog}
-          online={online}
-          pendingSync={pendingSync}
-          onToggle={toggleCheck}
-          onEdit={entry => { setEditItem(entry); setPrefillItem(null); setShowForm(true) }}
-          othersOnList={othersOnList}
-          onAdd={() => { setEditItem(null); setPrefillItem(null); setShowForm(true) }}
-          onFinish={() => { setMercado(shopping.mercado || ''); setFinishing(true) }}
-          onExit={exitShopping}
-          onChangeMarket={() => setShowStart(true)}
-        />
-        {overlays}
-      </>
-    )
-  }
 
   return (
     <div className="flex flex-col min-h-svh bg-gray-900">
@@ -406,14 +357,10 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
           <span>{pending.length} pendentes · {fmt(totalPending)}</span>
           <span>·</span>
           <span>Total {fmt(totalAll)}</span>
-          {!online && <span className="ml-auto text-amber-400">● offline</span>}
+          {!online
+            ? <span className="ml-auto text-amber-400">● offline · salvo no aparelho</span>
+            : pendingSync && <span className="ml-auto text-blue-300">sincronizando…</span>}
         </div>
-        {entries.length > 0 && (
-          <button onClick={() => setShowStart(true)}
-            className="mt-3 w-full bg-green-500 text-white font-semibold py-2.5 rounded-xl text-sm flex items-center justify-center gap-2">
-            🛒 Ir ao mercado
-          </button>
-        )}
       </div>
       <PresenceBanner people={othersShopping} />
 
