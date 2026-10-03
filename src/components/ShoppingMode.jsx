@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { latestByMarket, marketKey } from '../lib/prices'
 import { useWakeLock } from '../lib/useWakeLock'
-import { IconCheck, IconPlus } from './Icon'
+import { IconCheck, IconEdit, IconPlus } from './Icon'
 import Sheet from './Sheet'
 
 const CATEGORY_ORDER = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
@@ -48,8 +48,8 @@ export function StartShopping({ options, initial = '', onStart, onClose }) {
 
 // Modo mercado: tela cheia, linhas grandes, tocar marca como pego
 export default function ShoppingMode({
-  listName, mercado, pending, checked, catalog, online, pendingSync,
-  onToggle, onAdd, onFinish, onExit, onChangeMarket,
+  listName, mercado, pending, checked, catalog, online, pendingSync, othersOnList = [],
+  onToggle, onEdit, onAdd, onFinish, onExit, onChangeMarket,
 }) {
   const [showChecked, setShowChecked] = useState(false)
   useWakeLock(true)
@@ -81,6 +81,11 @@ export default function ShoppingMode({
             <p className="text-gray-300 text-sm">Faltam {pending.length}{totalPending > 0 ? ` · ~${fmt(totalPending)}` : ''}</p>
           </div>
         </div>
+        {othersOnList.length > 0 && (
+          <div className="mt-2 text-xs px-3 py-1.5 rounded-lg bg-green-500/10 text-green-300">
+            {othersOnList.map(p => p.name?.split(' ')[0]).join(', ')} também está comprando esta lista agora
+          </div>
+        )}
         {(!online || pendingSync) && (
           <div className={`mt-2 text-xs px-3 py-1.5 rounded-lg ${online ? 'bg-blue-500/10 text-blue-300' : 'bg-amber-500/10 text-amber-300'}`}>
             {online ? 'Sincronizando…' : 'Sem internet · tudo fica salvo e sincroniza quando a conexão voltar'}
@@ -103,8 +108,9 @@ export default function ShoppingMode({
             {items.map(entry => {
               const here = priceHere(entry)
               return (
-                <button key={entry.id} onClick={() => onToggle(entry)}
-                  className="w-full flex items-center gap-4 px-4 py-4 border-b border-gray-800/70 active:bg-gray-800 text-left">
+                <div key={entry.id} className="flex items-stretch border-b border-gray-800/70">
+                <button onClick={() => onToggle(entry)}
+                  className="flex-1 min-w-0 flex items-center gap-4 pl-4 pr-2 py-4 active:bg-gray-800 text-left">
                   <span className="w-8 h-8 rounded-full border-2 border-gray-500 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-white text-lg leading-tight">{entry.name}</p>
@@ -118,6 +124,10 @@ export default function ShoppingMode({
                     {here && <p className="text-emerald-400/80 text-xs">aqui: {fmt(here.price)}/{entry.unit}</p>}
                   </div>
                 </button>
+                <button onClick={() => onEdit(entry)} aria-label="Editar" className="px-4 text-gray-500 active:bg-gray-800">
+                  <IconEdit size={18} />
+                </button>
+                </div>
               )
             })}
           </div>
@@ -130,12 +140,17 @@ export default function ShoppingMode({
               <span>{showChecked ? '▼' : '▶'}</span>
             </button>
             {showChecked && checked.map(entry => (
-              <button key={entry.id} onClick={() => onToggle(entry)}
-                className="w-full flex items-center gap-4 px-4 py-3 border-b border-gray-800/50 text-left opacity-60">
-                <span className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0"><IconCheck size={16} /></span>
-                <span className="flex-1 text-gray-400 line-through">{entry.name}</span>
-                <span className="text-gray-500 text-sm">{Number(entry.totalPrice) > 0 ? fmt(entry.totalPrice) : ''}</span>
-              </button>
+              <div key={entry.id} className="flex items-stretch border-b border-gray-800/50">
+                <button onClick={() => onToggle(entry)}
+                  className="flex-1 min-w-0 flex items-center gap-4 pl-4 pr-2 py-3 text-left opacity-60">
+                  <span className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0"><IconCheck size={16} /></span>
+                  <span className="flex-1 text-gray-400 line-through truncate">{entry.name}</span>
+                  <span className="text-gray-500 text-sm">{Number(entry.totalPrice) > 0 ? fmt(entry.totalPrice) : ''}</span>
+                </button>
+                <button onClick={() => onEdit(entry)} aria-label="Editar preço" className="px-4 text-gray-500">
+                  <IconEdit size={18} />
+                </button>
+              </div>
             ))}
           </div>
         )}

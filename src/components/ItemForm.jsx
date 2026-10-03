@@ -19,7 +19,7 @@ const empty = { name: '', obs: '', category: 'Mercearia', qty: '1', unit: 'un', 
 // Lembra "Já está no carrinho" enquanto o app estiver aberto (cadastro em série no mercado)
 let lastInCart = false
 
-export default function ItemForm({ onSave, onCancel, initial, defaultInCart = false }) {
+export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultInCart = false }) {
   const { familyId, userDoc } = useFamily()
   const decimals = userDoc?.priceDecimals === 3 ? 3 : 2
   const isNew = !initial?.id
@@ -193,6 +193,12 @@ export default function ItemForm({ onSave, onCancel, initial, defaultInCart = fa
             Salvar
           </button>
         </div>
+        {onDelete && (
+          <button onClick={() => confirm(`Remover "${form.name}" da lista?`) && onDelete()}
+            className="w-full text-red-400/80 text-sm py-3 mt-1">
+            Remover da lista
+          </button>
+        )}
       </div>
     </div>
   )

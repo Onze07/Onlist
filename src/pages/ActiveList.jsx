@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   collection, onSnapshot, addDoc, updateDoc, deleteDoc,
-  doc, setDoc, serverTimestamp, getDocs, query, orderBy
+  doc, setDoc, serverTimestamp, getDocs, query, orderBy, arrayUnion
 } from 'firebase/firestore'
 import { db } from '../firebase'
-import { commitInChunks, localDate, normalizePriceHistory, queueWrite } from '../lib/firestore'
+import { commitInChunks, localDate, queueWrite } from '../lib/firestore'
 import { useFamily } from '../context/FamilyContext'
 import { useAuth } from '../context/AuthContext'
 import ItemForm from '../components/ItemForm'
@@ -14,6 +14,7 @@ import CompareMarkets from '../components/CompareMarkets'
 import ShoppingMode, { StartShopping } from '../components/ShoppingMode'
 import PresenceBanner from '../components/PresenceBanner'
 import { useOnline, useWriteErrors } from '../lib/useSync'
+import { usePresence } from '../lib/usePresence'
 import { cheapest } from '../lib/prices'
 import { IconChevronDown, IconCheck, IconPlus, IconX } from '../components/Icon'
 
@@ -48,6 +49,8 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   const [pendingSync, setPendingSync] = useState(false)
   const online = useOnline()
   const writeError = useWriteErrors()
+  const othersShopping = usePresence(familyId, user?.uid)
+  const finishingRef = useRef(false)
 
   // Load last list: usa a salva neste aparelho, senão a primeira ativa, senão cria a padrão
   useEffect(() => {
@@ -111,13 +114,14 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       name: user.displayName || user.email,
       mercado: shopping.mercado || null,
       listName: listName || null,
+      listId: listId || null,
       ...(first ? { startedAt: serverTimestamp() } : {}),
       updatedAt: serverTimestamp(),
     }, { merge: true }), 'avisar a família')
     write(true)
     const t = setInterval(() => write(false), 5 * 60 * 1000)
     return () => clearInterval(t)
-  }, [shopping, familyId, user, listName])
+  }, [shopping, familyId, user, listName, listId])
 
   // Load catalog for price signals
   useEffect(() => {
@@ -249,7 +253,10 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   }
 
   function finishShopping() {
-    if (saving) return
+    // Evita registrar a mesma compra duas vezes com toque duplo
+    if (finishingRef.current) return
+    finishingRef.current = true
+    setTimeout(() => { finishingRef.current = false }, 1500)
     setSaving(true)
     const mercadoName = mercado.trim() || 'Não informado'
     const today = localDate()
@@ -267,19 +274,15 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     if (mercado.trim()) {
       ops.push(b => b.set(doc(db, 'families', familyId, 'mercados', mercado.trim().toLowerCase()), { name: mercado.trim() }))
     }
-    // update catalog with price + mercado
-    // Regrava o histórico já sem repetições (limpa também registros antigos duplicados)
+    // Histórico de preço com arrayUnion: duas pessoas finalizando offline não apagam o registro uma da outra.
+    // Repetições antigas são filtradas na exibição (normalizePriceHistory).
     for (const e of checked) {
       if (Number(e.pricePerUnit) > 0) {
         const key = e.name.toLowerCase()
-        const priceHistory = normalizePriceHistory([
-          ...(catalog[key]?.priceHistory || []),
-          { price: Number(e.pricePerUnit), date: today, mercado: mercadoName },
-        ])
         ops.push(b => b.set(doc(db, 'families', familyId, 'catalog', key), {
           name: e.name, category: e.category, unit: e.unit,
           lastPrice: e.pricePerUnit,
-          priceHistory,
+          priceHistory: arrayUnion({ price: Number(e.pricePerUnit), date: today, mercado: mercadoName }),
         }, { merge: true }))
       }
     }
@@ -294,12 +297,20 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
 
   const mercadoFiltered = mercadoOptions.filter(m => m.toLowerCase().includes(mercado.toLowerCase()))
 
+  const othersOnList = othersShopping.filter(p => p.listId === listId)
+
   const finishModal = finishing && (
       <div className="fixed inset-0 bg-black/70 z-50 flex items-end">
         <div className="bg-gray-900 rounded-t-3xl w-full p-6 pb-10">
           <div className="w-10 h-1 bg-gray-700 rounded-full mx-auto mb-6" />
           <h2 className="text-white text-lg font-semibold mb-1">Finalizar compra</h2>
           <p className="text-gray-400 text-sm mb-5">{checked.length} itens · {fmt(totalChecked)}</p>
+          {othersOnList.length > 0 && (
+            <p className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs rounded-xl px-3 py-2 mb-4">
+              {othersOnList.map(p => p.name?.split(' ')[0]).join(', ')} também está no modo mercado com esta lista.
+              Combinem quem finaliza, para a compra não ser registrada duas vezes.
+            </p>
+          )}
           <div className="relative mb-5">
             <input value={mercado} onChange={e => setMercado(e.target.value)}
               onFocus={() => setMercadoFocused(true)} onBlur={() => setTimeout(() => setMercadoFocused(false), 150)}
@@ -342,6 +353,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
         <ItemForm
           initial={prefillItem || editItem}
           defaultInCart={!!shopping}
+          onDelete={editItem ? () => { handleDelete(editItem.id); setShowForm(false); setEditItem(null) } : undefined}
           onSave={handleSave}
           onCancel={() => { setShowForm(false); setEditItem(null); setPrefillItem(null) }}
         />
@@ -370,6 +382,8 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
           online={online}
           pendingSync={pendingSync}
           onToggle={toggleCheck}
+          onEdit={entry => { setEditItem(entry); setPrefillItem(null); setShowForm(true) }}
+          othersOnList={othersOnList}
           onAdd={() => { setEditItem(null); setPrefillItem(null); setShowForm(true) }}
           onFinish={() => { setMercado(shopping.mercado || ''); setFinishing(true) }}
           onExit={exitShopping}
@@ -401,7 +415,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
           </button>
         )}
       </div>
-      <PresenceBanner familyId={familyId} uid={user?.uid} />
+      <PresenceBanner people={othersShopping} />
 
       {/* Actions bar */}
       {(pending.length > 0 || checked.length > 0) && (
