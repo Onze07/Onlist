@@ -130,10 +130,12 @@ export default function History() {
                   {isExpanded && record.items && (
                     <div className="border-t border-gray-800 bg-gray-800/30">
                       {record.source !== 'nfce' && (
-                        <button onClick={() => setReconcile(record)}
-                          className="w-full text-left px-4 py-2.5 text-green-300 text-sm border-b border-gray-800/60">
-                          📄 Conciliar com a nota fiscal
-                        </button>
+                        <div className="px-4 py-2.5 border-b border-gray-800/60">
+                          <button onClick={() => setReconcile(record)}
+                            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border border-green-500/40 bg-green-500/10 text-green-300 active:bg-green-500/20">
+                            📄 Conciliar com a nota fiscal
+                          </button>
+                        </div>
                       )}
                       {record.items.map((item, idx) => (
                         <div key={idx} className={`flex items-center justify-between px-4 py-2 ${idx < record.items.length - 1 ? 'border-b border-gray-800/40' : ''}`}>

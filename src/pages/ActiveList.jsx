@@ -18,7 +18,8 @@ import { sendNotify } from '../lib/push'
 import { useOnline, useWriteErrors } from '../lib/useSync'
 import { usePresence } from '../lib/usePresence'
 import { cheapest } from '../lib/prices'
-import { IconChevronDown, IconCheck, IconPlus, IconX } from '../components/Icon'
+import { IconChevronDown, IconCheck, IconPlus, IconX, IconBell, IconScale, IconUndo, IconTrash } from '../components/Icon'
+import ActionChip from '../components/ActionChip'
 
 const CATEGORY_ORDER = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
 
@@ -388,9 +389,10 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     <div className="flex flex-col min-h-svh bg-gray-900">
       {/* Header */}
       <div className="px-4 pt-12 pb-3 border-b border-gray-800">
-        <button onClick={() => setShowManager(true)} className="flex items-center gap-1.5 mb-1">
-          <h1 className="text-white text-xl font-semibold">{listName || '...'}</h1>
-          <span className="text-gray-500"><IconChevronDown size={16} /></span>
+        <button onClick={() => setShowManager(true)} aria-label="Trocar de lista"
+          className="inline-flex items-center gap-2 mb-1.5 -ml-1 pl-3 pr-2.5 py-1 rounded-full bg-gray-800/70 border border-gray-700 active:bg-gray-700">
+          <h1 className="text-white text-lg font-semibold">{listName || '...'}</h1>
+          <span className="text-gray-400"><IconChevronDown size={16} /></span>
         </button>
         <div className="flex gap-3 text-xs text-gray-500 items-center">
           <span>{pending.length} pendentes · {fmt(totalPending)}</span>
@@ -403,34 +405,20 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       </div>
       <PresenceBanner people={othersShopping} />
 
-      {/* Actions bar */}
+      {/* Ações: pílulas com ícone (rolam na horizontal em telas estreitas) */}
       {(pending.length > 0 || checked.length > 0) && (
-        <div className="flex gap-2 px-4 py-2 border-b border-gray-800">
-          {checked.length > 0 && (
-            <button onClick={uncheckAll} className="text-xs text-gray-500 flex items-center gap-1 px-2 py-1 rounded-md hover:bg-gray-800">
-              Desmarcar tudo
-            </button>
-          )}
+        <div className="flex gap-2 px-4 py-2.5 border-b border-gray-800 overflow-x-auto [mask-image:linear-gradient(to_right,black_85%,transparent)] pr-8">
           {pending.length > 0 && (
-            <button onClick={clearPending} className="text-xs text-gray-500 flex items-center gap-1 px-2 py-1 rounded-md hover:bg-gray-800">
-              Limpar pendentes
-            </button>
-          )}
-          {pending.length > 0 && (
-            <button onClick={() => setShowNotify(true)} className="text-xs text-gray-400 flex items-center gap-1 px-2 py-1 rounded-md hover:bg-gray-800">
-              Avisar
-            </button>
+            <ActionChip icon={<IconBell size={14} />} onClick={() => setShowNotify(true)}>Avisar alguém</ActionChip>
           )}
           {entries.length > 0 && (
-            <button onClick={() => setShowCompare(true)} className="text-xs text-gray-400 flex items-center gap-1 px-2 py-1 rounded-md hover:bg-gray-800">
-              Comparar mercados
-            </button>
+            <ActionChip icon={<IconScale size={14} />} onClick={() => setShowCompare(true)}>Comparar mercados</ActionChip>
           )}
           {checked.length > 0 && (
-            <button onClick={() => setFinishing(true)}
-              className="ml-auto text-xs text-green-400 font-semibold px-3 py-1 rounded-md bg-green-500/10">
-              Finalizar · {fmt(totalChecked)}
-            </button>
+            <ActionChip icon={<IconUndo size={14} />} onClick={uncheckAll}>Desmarcar tudo</ActionChip>
+          )}
+          {pending.length > 0 && (
+            <ActionChip icon={<IconTrash size={14} />} tone="danger" onClick={clearPending}>Limpar pendentes</ActionChip>
           )}
         </div>
       )}
@@ -490,12 +478,18 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
         )}
       </div>
 
-      {/* Add button */}
-      <div className="fixed bottom-16 left-0 right-0 max-w-lg mx-auto px-4 pb-2">
+      {/* Ações principais: adicionar e, quando há itens no carrinho, finalizar */}
+      <div className="fixed bottom-16 left-0 right-0 max-w-lg mx-auto px-4 pb-2 flex gap-2">
         <button onClick={() => { setEditItem(null); setPrefillItem(null); setShowForm(true) }}
-          className="w-full bg-gray-800 border border-gray-700 text-gray-300 font-medium py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-xl text-sm">
-          <IconPlus /> Adicionar item
+          className={`${checked.length > 0 ? 'flex-1' : 'w-full'} bg-gray-800 border border-gray-700 text-gray-200 font-medium py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-xl text-sm active:bg-gray-700`}>
+          <IconPlus /> {checked.length > 0 ? 'Item' : 'Adicionar item'}
         </button>
+        {checked.length > 0 && (
+          <button onClick={() => setFinishing(true)}
+            className="flex-[2] bg-green-500 text-white font-semibold py-3.5 rounded-2xl shadow-xl text-sm active:bg-green-600">
+            Finalizar · {fmt(totalChecked)}
+          </button>
+        )}
       </div>
 
       {overlays}
