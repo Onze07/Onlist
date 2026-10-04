@@ -6,13 +6,13 @@ import { parsePrice } from '../lib/firestore'
 import { roundTo } from '../lib/money'
 import { useVisualViewport } from '../lib/useVisualViewport'
 import MoneyInput from './MoneyInput'
+import { UNITS, UNIT_LABELS } from '../lib/nfceMatch'
 
 function fmtBRL(n) {
   return Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
 const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
-const UNITS = ['un', 'kg', 'g', 'dz', 'ml', 'l']
 
 const empty = { name: '', obs: '', category: 'Mercearia', qty: '1', unit: 'un', pricePerUnit: 0, totalPrice: 0 }
 
@@ -134,8 +134,8 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
             {CATEGORIES.map(c => <option key={c}>{c}</option>)}
           </select>
           <select value={form.unit} onChange={e => set('unit', e.target.value)}
-            className={`w-20 px-3 py-2.5 text-base ${field}`}>
-            {UNITS.map(u => <option key={u}>{u}</option>)}
+            className={`w-32 px-3 py-2.5 text-base ${field}`}>
+            {UNITS.map(u => <option key={u} value={u}>{u} · {UNIT_LABELS[u]}</option>)}
           </select>
         </div>
         {categoryError && <p className="text-red-400 text-xs -mt-1 mb-2 px-1">Escolha uma categoria</p>}

@@ -13,6 +13,7 @@ import MoneyInput from '../components/MoneyInput'
 import CompareMarkets from '../components/CompareMarkets'
 import PresenceBanner from '../components/PresenceBanner'
 import NotifySheet from '../components/NotifySheet'
+import NfceReader from '../components/NfceReader'
 import { sendNotify } from '../lib/push'
 import { useOnline, useWriteErrors } from '../lib/useSync'
 import { usePresence } from '../lib/usePresence'
@@ -51,6 +52,8 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   const othersShopping = usePresence(familyId, user?.uid)
   const presenceWrittenAt = useRef(0)
   const [showNotify, setShowNotify] = useState(false)
+  const [showNfce, setShowNfce] = useState(false)
+  const [notice, setNotice] = useState('')
   const finishingRef = useRef(false)
 
   // Load last list: usa a salva neste aparelho, senão a primeira ativa, senão cria a padrão
@@ -291,7 +294,12 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
         <div className="bg-gray-900 rounded-t-3xl w-full p-6 pb-10">
           <div className="w-10 h-1 bg-gray-700 rounded-full mx-auto mb-6" />
           <h2 className="text-white text-lg font-semibold mb-1">Finalizar compra</h2>
-          <p className="text-gray-400 text-sm mb-5">{checked.length} itens · {fmt(totalChecked)}</p>
+          <p className="text-gray-400 text-sm mb-4">{checked.length} itens · {fmt(totalChecked)}</p>
+          <button onClick={() => { setFinishing(false); setShowNfce(true) }}
+            className="w-full bg-gray-800 border border-green-500/40 text-green-300 font-semibold py-3 rounded-xl text-sm mb-4 flex items-center justify-center gap-2">
+            📷 Ler nota fiscal
+          </button>
+          <p className="text-gray-600 text-xs text-center mb-3">ou registre manualmente</p>
           {othersOnList.length > 0 && (
             <p className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs rounded-xl px-3 py-2 mb-4">
               {othersOnList.map(p => p.name?.split(' ')[0]).join(', ')} também está marcando itens desta lista agora.
@@ -343,6 +351,28 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
           onSave={handleSave}
           onCancel={() => { setShowForm(false); setEditItem(null); setPrefillItem(null) }}
         />
+      )}
+      {showNfce && (
+        <NfceReader
+          familyId={familyId}
+          user={user}
+          catalog={catalog}
+          entries={entries.map(e => ({ ...e, listId }))}
+          listName={listName}
+          mercadoOptions={mercadoOptions}
+          onClose={() => setShowNfce(false)}
+          onSaved={({ removed, leftChecked }) => {
+            setShowNfce(false)
+            clearShopping()
+            setNotice(`Compra registrada pela nota. ${removed} ${removed === 1 ? 'item saiu' : 'itens saíram'} da lista${leftChecked ? `; ${leftChecked} marcado(s) não estavam na nota e continuam na lista` : ''}.`)
+            setTimeout(() => setNotice(''), 7000)
+          }}
+        />
+      )}
+      {notice && (
+        <div className="fixed top-3 inset-x-3 z-[60] max-w-lg mx-auto bg-green-600/95 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl" onClick={() => setNotice('')}>
+          {notice}
+        </div>
       )}
       {writeError && (
         <div className="fixed top-3 inset-x-3 z-[60] max-w-lg mx-auto bg-red-500/90 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl">
