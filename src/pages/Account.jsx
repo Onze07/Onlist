@@ -220,7 +220,7 @@ export default function Account() {
       )}
 
       <Section title="Notificações">
-        <div className="px-4 py-3 border-b border-gray-800">
+        <div className={`px-4 py-3 ${push === 'enabled' ? 'border-b border-gray-800' : ''}`}>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-white text-sm">Avisos neste aparelho</p>
@@ -249,16 +249,19 @@ export default function Account() {
             )}
           </div>
         </div>
-        <button onClick={() => updateUserDoc({ notifyShopping: userDoc?.notifyShopping === false }).catch(e => alert('Erro: ' + e.message))}
-          className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left" aria-pressed={userDoc?.notifyShopping !== false}>
-          <span>
-            <span className="text-white text-sm block">Quando alguém começar a comprar</span>
-            <span className="text-gray-500 text-xs">"Ana está no mercado"</span>
-          </span>
-          <span className={`w-11 h-6 rounded-full p-0.5 transition-colors flex-shrink-0 ${userDoc?.notifyShopping !== false ? 'bg-green-500' : 'bg-gray-700'}`}>
-            <span className={`block w-5 h-5 rounded-full bg-white transition-transform ${userDoc?.notifyShopping !== false ? 'translate-x-5' : ''}`} />
-          </span>
-        </button>
+        {/* Preferência só faz sentido depois de ativar os avisos neste aparelho */}
+        {push === 'enabled' && (
+          <button onClick={() => updateUserDoc({ notifyShopping: userDoc?.notifyShopping === false }).catch(e => alert('Erro: ' + e.message))}
+            className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left" aria-pressed={userDoc?.notifyShopping !== false}>
+            <span>
+              <span className="text-white text-sm block">Quando alguém começar a comprar</span>
+              <span className="text-gray-500 text-xs">"Ana está no mercado"</span>
+            </span>
+            <span className={`w-11 h-6 rounded-full p-0.5 transition-colors flex-shrink-0 ${userDoc?.notifyShopping !== false ? 'bg-green-500' : 'bg-gray-700'}`}>
+              <span className={`block w-5 h-5 rounded-full bg-white transition-transform ${userDoc?.notifyShopping !== false ? 'translate-x-5' : ''}`} />
+            </span>
+          </button>
+        )}
       </Section>
 
       <Section title="App">

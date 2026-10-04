@@ -6,9 +6,9 @@ import { fmtDate, normalizePriceHistory } from '../lib/firestore'
 import { latestByMarket } from '../lib/prices'
 import MoneyInput from '../components/MoneyInput'
 import { IconEdit, IconTrash, IconChevronDown, IconChevronRight, IconTrendingUp } from '../components/Icon'
+import { UNITS, UNIT_LABELS } from '../lib/nfceMatch'
 
 const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
-const UNITS = ['un', 'kg', 'g', 'dz', 'ml', 'l']
 
 function fmt(n) {
   if (!n) return '—'
@@ -205,7 +205,7 @@ function EditRow({ item, categories, units, decimals, onSave, onCancel }) {
         </select>
         <select value={form.unit} onChange={e => set('unit', e.target.value)}
           className="bg-gray-900 text-white px-3 py-2 rounded-lg outline-none text-sm border border-gray-700">
-          {units.map(u => <option key={u}>{u}</option>)}
+          {units.map(u => <option key={u} value={u}>{u} · {UNIT_LABELS[u]}</option>)}
         </select>
       </div>
       <div className="flex items-center bg-gray-900 rounded-lg px-3 border border-gray-700">

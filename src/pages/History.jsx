@@ -5,6 +5,8 @@ import { useFamily } from '../context/FamilyContext'
 import { IconTrash, IconChevronDown, IconChevronRight, IconDownload } from '../components/Icon'
 import { historyCsv, downloadFile } from '../lib/csv'
 import { localDate } from '../lib/firestore'
+import { useAuth } from '../context/AuthContext'
+import NfceReader from '../components/NfceReader'
 
 function fmt(n) {
   return (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -27,6 +29,8 @@ function dayLabel(ts) {
 
 export default function History() {
   const { familyId } = useFamily()
+  const user = useAuth()
+  const [showNfce, setShowNfce] = useState(false)
   const [records, setRecords] = useState([])
   const [expanded, setExpanded] = useState(null)
 
@@ -62,14 +66,24 @@ export default function History() {
       <div className="px-4 pt-12 pb-3 border-b border-gray-800">
         <div className="flex items-center justify-between">
           <h1 className="text-white text-xl font-semibold">Registros</h1>
-          {records.length > 0 && (
-            <button onClick={exportCsv}
-              className="text-gray-400 text-xs flex items-center gap-1.5 border border-gray-700 px-3 py-1.5 rounded-lg">
-              <IconDownload size={14} /> Exportar
+          <div className="flex gap-2">
+            <button onClick={() => setShowNfce(true)}
+              className="text-green-300 text-xs border border-green-500/40 px-3 py-1.5 rounded-lg">
+              📷 Nota fiscal
             </button>
-          )}
+            {records.length > 0 && (
+              <button onClick={exportCsv}
+                className="text-gray-400 text-xs flex items-center gap-1.5 border border-gray-700 px-3 py-1.5 rounded-lg">
+                <IconDownload size={14} /> Exportar
+              </button>
+            )}
+          </div>
         </div>
       </div>
+      {showNfce && (
+        <NfceReader familyId={familyId} user={user} listName="Nota fiscal"
+          onClose={() => setShowNfce(false)} onSaved={() => setShowNfce(false)} />
+      )}
 
       <div className="flex-1 overflow-y-auto pb-20">
         {records.length === 0 && (
