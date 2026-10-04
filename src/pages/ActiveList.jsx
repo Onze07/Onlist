@@ -210,6 +210,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   }
 
   function uncheckAll() {
+    if (!confirm(`Desmarcar os ${checked.length} itens do carrinho?`)) return
     queueWrite(commitInChunks(checked.map(e => b => b.update(entryRef(e.id), { checked: false }))), 'desmarcar itens')
   }
 
@@ -405,20 +406,21 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       </div>
       <PresenceBanner people={othersShopping} />
 
-      {/* Ações: pílulas com ícone (rolam na horizontal em telas estreitas) */}
+      {/* Ações: ícones conhecidos sem texto, para caber tudo numa linha */}
       {(pending.length > 0 || checked.length > 0) && (
-        <div className="flex gap-2 px-4 py-2.5 border-b border-gray-800 overflow-x-auto [mask-image:linear-gradient(to_right,black_85%,transparent)] pr-8">
-          {pending.length > 0 && (
-            <ActionChip icon={<IconBell size={14} />} onClick={() => setShowNotify(true)}>Avisar alguém</ActionChip>
-          )}
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-800">
           {entries.length > 0 && (
-            <ActionChip icon={<IconScale size={14} />} onClick={() => setShowCompare(true)}>Comparar mercados</ActionChip>
-          )}
-          {checked.length > 0 && (
-            <ActionChip icon={<IconUndo size={14} />} onClick={uncheckAll}>Desmarcar tudo</ActionChip>
+            <ActionChip icon={<IconScale size={15} />} onClick={() => setShowCompare(true)}>Comparar preços</ActionChip>
           )}
           {pending.length > 0 && (
-            <ActionChip icon={<IconTrash size={14} />} tone="danger" onClick={clearPending}>Limpar pendentes</ActionChip>
+            <ActionChip icon={<IconBell size={16} />} label="Avisar alguém" onClick={() => setShowNotify(true)} />
+          )}
+          <span className="flex-1" />
+          {checked.length > 0 && (
+            <ActionChip icon={<IconUndo size={16} />} label="Desmarcar tudo" onClick={uncheckAll} />
+          )}
+          {pending.length > 0 && (
+            <ActionChip icon={<IconTrash size={16} />} label="Limpar pendentes" tone="danger" onClick={clearPending} />
           )}
         </div>
       )}
