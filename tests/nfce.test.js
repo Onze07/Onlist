@@ -90,3 +90,34 @@ test('fuso do estado pela chave', () => {
   assert.equal(ufOffset('35261004082624003767650140002515281350930174'), '-03:00')
   assert.equal(ufOffset('12261004082624003767650140002515281350930174'), '-05:00')
 })
+
+// --- Conciliação com compras manuais ---
+import { findSimilarPurchases } from '../src/lib/nfceMatch.js'
+
+const nfNota = {
+  store: 'IRMAOS GONCALVES COMERCIO E INDUSTRIA LTDA', total: 13.7, issuedAt: '2026-10-03T11:38:07-04:00',
+  items: [{ name: 'BANANA MACA RG' }, { name: 'ESPONJA ALKLIN MULT DUPLA FAC 3 UND' }],
+}
+
+test('encontra a compra manual da mesma ida ao mercado', () => {
+  const records = [
+    { id: 'manual', createdAt: new Date('2026-10-03T12:10:00-04:00'), mercado: 'Irmãos Gonçalves', total: 13.7, items: [{ name: 'Banana' }, { name: 'Esponja' }] },
+    { id: 'outra-semana', createdAt: new Date('2026-09-26T10:00:00-04:00'), mercado: 'Irmãos Gonçalves', total: 13.7, items: [] },
+    { id: 'ja-nota', createdAt: new Date('2026-10-03T12:00:00-04:00'), mercado: 'Irmãos Gonçalves', total: 13.7, nfceKey: 'x', items: [] },
+    { id: 'outro-mercado', createdAt: new Date('2026-10-03T18:00:00-04:00'), mercado: 'Atacadão', total: 250, items: [{ name: 'Carne' }] },
+  ]
+  const r = findSimilarPurchases(nfNota, records)
+  assert.deepEqual(r.map(x => x.record.id), ['manual'])
+  assert.ok(r[0].strong)
+})
+
+test('total parecido em mercado diferente ainda sugere, mas sem certeza', () => {
+  const r = findSimilarPurchases(nfNota, [{ id: 'a', createdAt: new Date('2026-10-04T09:00:00-04:00'), mercado: 'Não informado', total: 14.5, items: [] }])
+  assert.equal(r.length, 1)
+  assert.equal(r[0].strong, false)
+})
+
+test('itens em comum em outro dia e outro mercado não sugerem', () => {
+  const r = findSimilarPurchases(nfNota, [{ id: 'atac', createdAt: new Date('2026-10-02T10:00:00-04:00'), mercado: 'Atacadão', total: 158.9, items: [{ name: 'Banana' }] }])
+  assert.equal(r.length, 0)
+})

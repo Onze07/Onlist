@@ -160,7 +160,7 @@ export default function Account() {
           {isAdmin && (
             <button disabled={busy}
               onClick={() => confirm('Gerar um novo código? O código atual deixa de funcionar.') && run(regenerateCode)}
-              className="text-gray-500 text-xs mt-3 underline underline-offset-2">
+              className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border border-gray-700 bg-gray-800 text-gray-300 active:bg-gray-700">
               Gerar novo código
             </button>
           )}

@@ -137,7 +137,7 @@ export default function ListManager({ activeListId, onSelect, onClose }) {
 
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-white font-semibold text-base">Listas ativas</h2>
-          <button onClick={() => setCreating(true)} className="text-green-400 text-sm flex items-center gap-1">+ nova</button>
+          <button onClick={() => setCreating(true)} className="inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-full border border-green-500/40 bg-green-500/10 text-green-300 active:bg-green-500/20">+ Nova lista</button>
         </div>
 
         {creating && (

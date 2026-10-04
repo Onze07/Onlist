@@ -115,3 +115,27 @@ export function IconDownload({ size = 16 }) {
     </svg>
   )
 }
+
+function Svg({ size, children }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {children}
+    </svg>
+  )
+}
+
+export function IconBell({ size = 14 }) {
+  return <Svg size={size}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></Svg>
+}
+
+export function IconScale({ size = 14 }) {
+  return <Svg size={size}><path d="M12 3v18" /><path d="M5 7h14" /><path d="M5 7l-3 7a4 4 0 0 0 6 0z" /><path d="M19 7l-3 7a4 4 0 0 0 6 0z" /><path d="M8 21h8" /></Svg>
+}
+
+export function IconUndo({ size = 14 }) {
+  return <Svg size={size}><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" /></Svg>
+}
+
+export function IconReceipt({ size = 14 }) {
+  return <Svg size={size}><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 1 .7V2l-1 .7-3-2-3 2-3-2-3 2z" /><path d="M8 8h8M8 12h8M8 16h5" /></Svg>
+}
