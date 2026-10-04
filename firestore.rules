@@ -20,9 +20,10 @@ service cloud.firestore {
       return request.auth.uid == data.createdBy || request.auth.uid in data.get('admins', []);
     }
 
-    // Vagas do plano. `plan` só é gravado pelo servidor (Admin SDK); sem plano = teste com 5 vagas.
+    // Vagas do plano. `plan` só é gravado pelo servidor (Admin SDK).
+    // Sem plano = sem cobrança ainda: 20 vagas, só contra abuso de código vazado.
     function seatsOf(data) {
-      return data.get('plan', {}).get('seats', 5);
+      return data.get('plan', {}).get('seats', 20);
     }
 
     function unchanged(keys) {
@@ -68,10 +69,16 @@ service cloud.firestore {
         && request.resource.data.get('admins', []) == []
         && !('plan' in request.resource.data);
 
-      // Admin: renomear, remover membros, trocar código. Só o dono mexe em admins.
+      // Admin: renomear, remover membros, trocar código. Só o dono mexe em admins
+      // e só o dono passa a posse (createdBy) para outro membro.
       allow update: if signedIn()
         && isAdminOf(resource.data)
-        && unchanged(['createdBy', 'plan'])
+        && unchanged(['plan'])
+        && (unchanged(['createdBy']) || (
+              request.auth.uid == resource.data.createdBy
+              && request.resource.data.createdBy in resource.data.members
+              && request.resource.data.createdBy in request.resource.data.members
+            ))
         // só remove, nunca adiciona membros por aqui
         && resource.data.members.toSet().hasAll(request.resource.data.members)
         // dono nunca é removido

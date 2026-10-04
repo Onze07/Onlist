@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   collection, onSnapshot, addDoc, updateDoc, deleteDoc,
-  doc, setDoc, serverTimestamp, getDocs, query, orderBy, arrayUnion
+  doc, setDoc, serverTimestamp, getDocs, query, orderBy
 } from 'firebase/firestore'
 import { db } from '../firebase'
-import { commitInChunks, localDate, queueWrite } from '../lib/firestore'
+import { commitInChunks, localDate, priceHistoryWrite, queueWrite } from '../lib/firestore'
 import { useFamily } from '../context/FamilyContext'
 import { useAuth } from '../context/AuthContext'
 import ItemForm from '../components/ItemForm'
@@ -266,15 +266,14 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     if (mercado.trim()) {
       ops.push(b => b.set(doc(db, 'families', familyId, 'mercados', mercado.trim().toLowerCase()), { name: mercado.trim() }))
     }
-    // Histórico de preço com arrayUnion: duas pessoas finalizando offline não apagam o registro uma da outra.
-    // Repetições antigas são filtradas na exibição (normalizePriceHistory).
+    // Histórico de preço (priceHistoryWrite): arrayUnion até o limite. Repetições são filtradas na exibição.
     for (const e of checked) {
       if (Number(e.pricePerUnit) > 0) {
         const key = e.name.toLowerCase()
         ops.push(b => b.set(doc(db, 'families', familyId, 'catalog', key), {
           name: e.name, category: e.category, unit: e.unit,
           lastPrice: e.pricePerUnit,
-          priceHistory: arrayUnion({ price: Number(e.pricePerUnit), date: today, mercado: mercadoName }),
+          priceHistory: priceHistoryWrite(catalog[key]?.priceHistory, { price: Number(e.pricePerUnit), date: today, mercado: mercadoName }),
         }, { merge: true }))
       }
     }

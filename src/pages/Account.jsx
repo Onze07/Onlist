@@ -3,14 +3,15 @@ import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
 import { useAuth } from '../context/AuthContext'
 import { useFamily } from '../context/FamilyContext'
-import { IconEdit, IconX } from '../components/Icon'
+import { IconEdit, IconX, IconQr, IconLink, IconWhatsApp } from '../components/Icon'
 import { userPhoto } from '../lib/user'
 import { useInstall } from '../lib/install'
 import InstallGuide from '../components/InstallGuide'
 import FeedbackSheet from '../components/FeedbackSheet'
 import { pushStatus, enablePush, disablePush } from '../lib/push'
-
-const APP_URL = typeof window !== 'undefined' ? window.location.origin : ''
+import { inviteLink, inviteText } from '../lib/invite'
+import InviteQr from '../components/InviteQr'
+import SwitchFamilySheet from '../components/SwitchFamilySheet'
 
 function Avatar({ profile, size = 36 }) {
   const initial = (profile?.name || profile?.email || '?').trim().charAt(0).toUpperCase()
@@ -42,7 +43,7 @@ export default function Account() {
   const user = useAuth()
   const {
     family, profiles, isOwner, isAdmin, seats,
-    renameFamily, regenerateCode, removeMember, setAdmin, leaveFamily, deleteAccount,
+    renameFamily, regenerateCode, removeMember, setAdmin, leaveFamily, deleteAccount, transferOwnership,
     userDoc, updateUserDoc,
   } = useFamily()
   const decimals = userDoc?.priceDecimals === 3 ? 3 : 2
@@ -53,6 +54,7 @@ export default function Account() {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [showQr, setShowQr] = useState(false)
 
   if (!family) return null
 
@@ -63,7 +65,6 @@ export default function Account() {
   })
   const used = family.members.length
   const full = used >= seats
-  const planLabel = family.plan?.name || 'Teste'
 
   async function run(fn) {
     if (busy) return
@@ -71,8 +72,9 @@ export default function Account() {
     try { await fn() } catch (e) { alert('Erro: ' + e.message) } finally { setBusy(false) }
   }
 
-  async function shareCode() {
-    const text = `Entre na lista de compras "${family.name || 'da família'}" no Onlist.\nCódigo: ${family.code}\n${APP_URL}`
+  const text = inviteText(family.name, family.code)
+
+  async function shareInvite() {
     if (navigator.share) {
       try { await navigator.share({ title: 'Convite Onlist', text }); return } catch { /* cancelado */ }
     }
@@ -133,33 +135,44 @@ export default function Account() {
             </div>
           )}
         </div>
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-gray-400 text-sm">Plano {planLabel}</span>
-            <span className={`text-sm font-medium ${full ? 'text-amber-400' : 'text-gray-300'}`}>{used} de {seats} pessoas</span>
-          </div>
-          <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
-            <div className={`h-full rounded-full ${full ? 'bg-amber-400' : 'bg-green-500'}`}
-              style={{ width: `${Math.min(100, (used / seats) * 100)}%` }} />
-          </div>
-          {full && <p className="text-amber-400/80 text-xs mt-2">Todas as vagas estão ocupadas. Ninguém novo consegue entrar.</p>}
+        <div className="p-4 flex items-center justify-between">
+          <span className="text-gray-400 text-sm">{family.plan?.name ? `Plano ${family.plan.name}` : 'Pessoas na família'}</span>
+          <span className={`text-sm font-medium ${full ? 'text-amber-400' : 'text-gray-300'}`}>
+            {family.plan ? `${used} de ${seats}` : used}
+          </span>
         </div>
+        {full && <p className="text-amber-400/80 text-xs px-4 pb-3 -mt-2">Todas as vagas estão ocupadas. Ninguém novo consegue entrar.</p>}
       </Section>
 
       {/* Convite */}
       <Section title="Convidar">
         <div className="p-4">
-          <p className="text-gray-400 text-xs mb-2">Código de convite</p>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-green-400 text-2xl font-bold tracking-[0.25em]">{family.code}</span>
-            <button onClick={shareCode} disabled={full}
-              className="bg-green-500 disabled:opacity-40 text-white text-sm font-semibold px-4 py-2 rounded-xl">
-              {copied ? 'Copiado!' : 'Compartilhar'}
+          <p className="text-gray-400 text-xs mb-1">Envie o link. Quem abrir entra direto na família.</p>
+          <p className="text-gray-500 text-xs mb-3">Código: <span className="text-green-400 font-bold tracking-[0.2em]">{family.code}</span></p>
+          <div className="flex items-center gap-2">
+            <a href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noopener noreferrer"
+              onClick={e => full && e.preventDefault()}
+              className={`flex-1 inline-flex items-center justify-center gap-2 bg-green-500 text-white text-sm font-semibold py-2.5 rounded-xl ${full ? 'opacity-40' : ''}`}>
+              <IconWhatsApp size={18} /> WhatsApp
+            </a>
+            <button onClick={shareInvite} disabled={full} aria-label="Compartilhar link" title="Compartilhar link"
+              className="inline-flex items-center justify-center gap-1.5 bg-gray-800 border border-gray-700 text-gray-200 text-sm px-3 py-2.5 rounded-xl disabled:opacity-40">
+              <IconLink size={16} /> {copied ? 'Copiado!' : 'Link'}
+            </button>
+            <button onClick={() => setShowQr(v => !v)} disabled={full} aria-label="Mostrar QR code" title="QR code" aria-pressed={showQr}
+              className={`inline-flex items-center justify-center w-11 h-11 rounded-xl border disabled:opacity-40 ${showQr ? 'bg-green-500/10 border-green-500/40 text-green-300' : 'bg-gray-800 border-gray-700 text-gray-200'}`}>
+              <IconQr size={18} />
             </button>
           </div>
+          {showQr && !full && (
+            <div className="mt-4 text-center">
+              <InviteQr value={inviteLink(family.code)} />
+              <p className="text-gray-500 text-xs mt-2">Aponte a câmera do celular da outra pessoa</p>
+            </div>
+          )}
           {isAdmin && (
             <button disabled={busy}
-              onClick={() => confirm('Gerar um novo código? O código atual deixa de funcionar.') && run(regenerateCode)}
+              onClick={() => confirm('Gerar um novo código? O código e o link atuais deixam de funcionar.') && run(regenerateCode)}
               className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border border-gray-700 bg-gray-800 text-gray-300 active:bg-gray-700">
               Gerar novo código
             </button>
@@ -195,12 +208,16 @@ export default function Account() {
                     if (action === 'admin') run(() => setAdmin(uid, true))
                     if (action === 'unadmin') run(() => setAdmin(uid, false))
                     if (action === 'remove' && confirm(`Remover ${who} da família?`)) run(() => removeMember(uid))
+                    if (action === 'owner' && confirm(`Passar a posse da família para ${who}? Você vira admin e pode sair da família depois.`)) {
+                      run(() => transferOwnership(uid))
+                    }
                   }}
                   className="bg-transparent text-gray-400 text-lg w-6 outline-none appearance-none text-center cursor-pointer"
                   aria-label="Ações">
                   <option value="" disabled hidden>⋯</option>
                   {isOwner && role === 'Membro' && <option value="admin">Tornar admin</option>}
                   {isOwner && role === 'Admin' && <option value="unadmin">Remover admin</option>}
+                  {isOwner && <option value="owner">Passar a posse</option>}
                   {canRemove && <option value="remove">Remover da família</option>}
                 </select>
               ) : <span className="w-6" />}
@@ -209,15 +226,19 @@ export default function Account() {
         })}
       </Section>
 
-      {!isOwner && (
-        <div className="px-4 pt-6">
+      <div className="px-4 pt-6 flex flex-col gap-2">
+        <button disabled={busy} onClick={() => setSheet('switch')}
+          className="w-full text-gray-200 text-sm border border-gray-700 bg-gray-800 py-3 rounded-xl">
+          Entrar em outra família
+        </button>
+        {!isOwner && (
           <button disabled={busy}
             onClick={() => confirm('Sair desta família? Você perde acesso às listas e ao histórico.') && run(leaveFamily)}
             className="w-full text-red-400 text-sm border border-red-500/30 py-3 rounded-xl">
             Sair da família
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       <Section title="Notificações">
         <div className={`px-4 py-3 ${push === 'enabled' ? 'border-b border-gray-800' : ''}`}>
@@ -312,6 +333,7 @@ export default function Account() {
 
       {sheet === 'install' && <InstallGuide onClose={() => setSheet(null)} />}
       {sheet === 'feedback' && <FeedbackSheet onClose={() => setSheet(null)} />}
+      {sheet === 'switch' && <SwitchFamilySheet onClose={() => setSheet(null)} />}
     </div>
   )
 }

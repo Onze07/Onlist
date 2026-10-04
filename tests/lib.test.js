@@ -111,3 +111,15 @@ test('filtro por período', () => {
   assert.ok(inRange({ toDate: () => new Date(2026, 9, 1) }, r))
   assert.ok(!inRange(null, r))
 })
+
+// --- Limite do histórico de preço ---
+import { trimPriceHistory, PRICE_HISTORY_MAX } from '../src/lib/prices.js'
+
+test('histórico de preço: abaixo do limite usa arrayUnion (null), no limite corta os antigos', () => {
+  const entry = { price: 9, date: '2026-12-31', mercado: 'IG' }
+  assert.equal(trimPriceHistory([], entry), null)
+  const full = Array.from({ length: PRICE_HISTORY_MAX }, (_, i) => ({ price: 1, date: `2026-01-${String(i % 28 + 1).padStart(2, '0')}`, mercado: `M${i}` }))
+  const r = trimPriceHistory(full, entry)
+  assert.equal(r.length, PRICE_HISTORY_MAX)
+  assert.deepEqual(r[r.length - 1], entry)
+})

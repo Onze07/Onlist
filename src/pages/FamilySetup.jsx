@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useFamily } from '../context/FamilyContext'
+import { clearPendingInvite, getPendingInvite } from '../lib/invite'
 
 export default function FamilySetup() {
   const { createFamily, joinFamily } = useFamily()
-  const [mode, setMode] = useState(null)
-  const [code, setCode] = useState('')
+  // Veio por link de convite: já abre com o código preenchido
+  const [mode, setMode] = useState(() => (getPendingInvite() ? 'join' : null))
+  const [code, setCode] = useState(() => getPendingInvite())
+  const invited = !!getPendingInvite()
   const [createdCode, setCreatedCode] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -26,6 +29,7 @@ export default function FamilySetup() {
     setError('')
     try {
       await joinFamily(code)
+      clearPendingInvite()
     } catch (e) {
       setError(e.message)
     }
@@ -44,7 +48,7 @@ export default function FamilySetup() {
           {createdCode}
         </div>
         <p className="text-gray-500 text-xs text-center">
-          A pessoa entra no app, toca em "Entrar com código" e digita este código.
+          Ou envie o convite pela tela Conta: lá tem link, QR code e WhatsApp.
         </p>
       </div>
     )
@@ -78,15 +82,15 @@ export default function FamilySetup() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-svh bg-gray-900 px-6">
-      <button onClick={() => setMode(null)} className="absolute top-6 left-6 text-gray-400 text-2xl">←</button>
-      <div className="text-4xl mb-4">🔑</div>
-      <h2 className="text-xl font-bold text-white mb-2">Digite o código</h2>
+      <button onClick={() => { clearPendingInvite(); setMode(null) }} className="absolute top-6 left-6 text-gray-400 text-2xl" aria-label="Voltar">←</button>
+      <div className="text-4xl mb-4">{invited ? '💌' : '🔑'}</div>
+      <h2 className="text-xl font-bold text-white mb-2">{invited ? 'Você foi convidado!' : 'Digite o código'}</h2>
       <p className="text-gray-400 text-sm mb-8 text-center">
-        Peça o código de 6 letras para quem criou a lista
+        {invited ? 'Toque em Entrar para participar da lista da família.' : 'Peça o código de 6 letras para quem criou a lista'}
       </p>
       <input
         value={code}
-        onChange={e => setCode(e.target.value.toUpperCase())}
+        onChange={e => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
         maxLength={6}
         placeholder="XXXXXX"
         className="w-full max-w-xs bg-gray-800 text-white text-center text-3xl tracking-widest font-bold py-4 rounded-xl mb-4 outline-none border-2 border-gray-700 focus:border-green-500"

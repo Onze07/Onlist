@@ -8,12 +8,15 @@ import { db, googleProvider } from '../firebase'
 import { commitInChunks } from '../lib/firestore'
 import { useAuth } from './AuthContext'
 import { userPhoto } from '../lib/user'
+import { apiPost } from '../lib/api'
+import { pushStatus } from '../lib/push'
 
 const FamilyContext = createContext(null)
 
 // Sem 0/O/1/I para evitar confusão ao digitar. 32 símbolos = sem viés no módulo.
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-export const DEFAULT_SEATS = 5
+// Sem cobrança por enquanto: limite alto só contra abuso de código vazado. Igual às regras e ao /api/family.
+export const DEFAULT_SEATS = 20
 
 function generateCode() {
   const bytes = crypto.getRandomValues(new Uint8Array(6))
@@ -35,6 +38,8 @@ function profileData(user) {
     email: user.email,
     photoURL: userPhoto(user),
     lastSeenAt: serverTimestamp(),
+    // Ao entrar numa família nova, os outros já veem que este aparelho recebe avisos
+    ...(pushStatus() === 'enabled' ? { pushEnabled: true } : {}),
   }
 }
 
@@ -45,7 +50,10 @@ export function FamilyProvider({ children }) {
   const [profiles, setProfiles] = useState({})
   const [userLoading, setUserLoading] = useState(true)
   const [userDoc, setUserDoc] = useState(undefined)
+  const [notice, setNotice] = useState('')
   const deletingRef = useRef(false)
+  // Durante a troca de família, a família antiga some/nega leitura: isso não pode zerar o familyId novo
+  const switchingRef = useRef(null)
 
   // Aceite dos termos, boas-vindas etc. (users/{uid}) em tempo real
   useEffect(() => {
@@ -83,14 +91,18 @@ export function FamilyProvider({ children }) {
       return
     }
     setFamily(undefined)
+    const stale = () => switchingRef.current && switchingRef.current !== familyId
     const unsub = onSnapshot(doc(db, 'families', familyId), snap => {
+      if (stale()) return
       if (snap.exists() && snap.data().members?.includes(user.uid)) {
+        if (switchingRef.current === familyId) switchingRef.current = null
         setFamily({ id: snap.id, ...snap.data() })
       } else {
         setFamily(null)
         setFamilyId(null)
       }
     }, () => {
+      if (stale()) return
       setFamily(null)
       setFamilyId(null)
       if (!deletingRef.current) {
@@ -129,7 +141,8 @@ export function FamilyProvider({ children }) {
       createdAt: serverTimestamp(),
     })
     batch.set(doc(db, 'familyCodes', code), { familyId: familyRef.id })
-    batch.set(doc(db, 'users', user.uid), { familyId: familyRef.id, email: user.email })
+    // merge: não apagar aceite dos termos, aparelhos de aviso etc.
+    batch.set(doc(db, 'users', user.uid), { familyId: familyRef.id, email: user.email }, { merge: true })
     batch.set(doc(db, 'families', familyRef.id, 'profiles', user.uid), { ...profileData(user), joinedAt: serverTimestamp() })
     await batch.commit()
     setFamilyId(familyRef.id)
@@ -144,7 +157,7 @@ export function FamilyProvider({ children }) {
 
     // joinCode prova para as regras do Firestore que o usuário conhece o código
     const batch = writeBatch(db)
-    batch.set(doc(db, 'users', user.uid), { familyId: fid, email: user.email, joinCode: code })
+    batch.set(doc(db, 'users', user.uid), { familyId: fid, email: user.email, joinCode: code }, { merge: true })
     batch.update(doc(db, 'families', fid), { members: arrayUnion(user.uid) })
     batch.set(doc(db, 'families', fid, 'profiles', user.uid), { ...profileData(user), joinedAt: serverTimestamp() })
     try {
@@ -195,6 +208,29 @@ export function FamilyProvider({ children }) {
     await batch.commit()
     try { localStorage.removeItem(`lastList_${fid}`) } catch { /* ignora */ }
     setFamilyId(null)
+  }
+
+  // Entrar em outra família já tendo uma. mode: 'merge' (levar meus dados) | 'fresh' (começar do zero)
+  async function switchFamily(rawCode, mode) {
+    const oldFid = family?.id
+    const code = rawCode.trim().toUpperCase()
+    switchingRef.current = 'pending'
+    try {
+      const result = await apiPost('/api/family', { action: 'switch', code, mode })
+      switchingRef.current = result.familyId
+      if (oldFid) try { localStorage.removeItem(`lastList_${oldFid}`) } catch { /* ignora */ }
+      setFamilyId(result.familyId)
+      return result
+    } catch (e) {
+      switchingRef.current = null
+      throw e
+    }
+  }
+
+  // Passa a família para outro membro. O dono atual vira admin e pode sair depois.
+  async function transferOwnership(uid) {
+    const admins = [...(family.admins || []).filter(a => a !== uid), user.uid]
+    await updateDoc(doc(db, 'families', family.id), { createdBy: uid, admins })
   }
 
   async function updateUserDoc(data) {
@@ -248,8 +284,8 @@ export function FamilyProvider({ children }) {
   return (
     <FamilyContext.Provider value={{
       familyId: family ? familyId : null, family, profiles, loading, isOwner, isAdmin, seats,
-      userDoc, updateUserDoc, deleteAccount,
-      createFamily, joinFamily, renameFamily, regenerateCode, removeMember, setAdmin, leaveFamily,
+      userDoc, updateUserDoc, deleteAccount, notice, setNotice,
+      createFamily, joinFamily, switchFamily, transferOwnership, renameFamily, regenerateCode, removeMember, setAdmin, leaveFamily,
     }}>
       {children}
     </FamilyContext.Provider>

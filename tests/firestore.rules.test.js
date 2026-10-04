@@ -134,10 +134,31 @@ test('limite de vagas: entrar falha quando o plano está cheio', async () => {
   await assertFails(join('bob'))
 })
 
-test('limite de vagas padrão é 5', async () => {
+test('limite de vagas padrão (sem plano) é 20', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const members = Array.from({ length: 19 }, (_, i) => `m${i}`)
+    await updateDoc(doc(ctx.firestore(), 'families/fam1'), { members: ['alice', ...members.slice(1)] })
+  })
   await assertSucceeds(join('bob'))
-  await assertSucceeds(join('carl'))
-  await assertFails(join('dora'))
+  await assertFails(join('carl'))
+})
+
+test('dono passa a posse para um membro e vira admin', async () => {
+  await assertSucceeds(updateDoc(doc(as('alice'), 'families/fam1'), { createdBy: 'mia', admins: ['adam', 'alice'] }))
+  // agora alice (admin) pode sair da família
+  await assertSucceeds(updateDoc(doc(as('alice'), 'families/fam1'), { members: ['adam', 'mia'], admins: ['adam'] }))
+})
+
+test('admin não passa a posse', async () => {
+  await assertFails(updateDoc(doc(as('adam'), 'families/fam1'), { createdBy: 'adam' }))
+})
+
+test('posse só vai para quem é membro', async () => {
+  await assertFails(updateDoc(doc(as('alice'), 'families/fam1'), { createdBy: 'mallory' }))
+})
+
+test('passar a posse não pode remover o novo dono', async () => {
+  await assertFails(updateDoc(doc(as('alice'), 'families/fam1'), { createdBy: 'mia', members: ['alice', 'adam'] }))
 })
 
 test('ninguém altera o plano pelo app', async () => {

@@ -14,6 +14,8 @@ import LegalConsent from './components/LegalConsent'
 import Welcome from './components/Welcome'
 import InstallBanner from './components/InstallBanner'
 import { LEGAL_VERSION } from './lib/legal'
+import SwitchFamilySheet from './components/SwitchFamilySheet'
+import { clearPendingInvite, getPendingInvite } from './lib/invite'
 
 function useHash() {
   const [hash, setHash] = useState(window.location.hash)
@@ -27,11 +29,27 @@ function useHash() {
 
 export default function App() {
   const user = useAuth()
-  const { familyId, loading, userDoc } = useFamily()
+  const { familyId, family, loading, userDoc, notice, setNotice } = useFamily()
   const hash = useHash()
   const [tab, setTab] = useState('list')
   const [pendingCatalogItem, setPendingCatalogItem] = useState(null)
   const clearPendingCatalogItem = useCallback(() => setPendingCatalogItem(null), [])
+  const [invite, setInvite] = useState(() => getPendingInvite())
+
+  // Some sozinho depois de alguns segundos
+  useEffect(() => {
+    if (!notice) return
+    const t = setTimeout(() => setNotice(''), 6000)
+    return () => clearTimeout(t)
+  }, [notice, setNotice])
+
+  // Abriu o link de convite da própria família: nada a fazer
+  useEffect(() => {
+    if (invite && family?.code === invite) {
+      clearPendingInvite()
+      setInvite('')
+    }
+  }, [invite, family?.code])
 
   // Páginas legais abrem com ou sem login
   if (hash === '#/privacidade' || hash === '#/termos') return <Legal doc={hash.slice(2)} />
@@ -68,6 +86,16 @@ export default function App() {
       {tab === 'account' && <Account />}
       <BottomNav tab={tab} setTab={setTab} />
       <InstallBanner />
+      {/* Link de convite de outra família aberto por quem já tem uma */}
+      {invite && family && family.code !== invite && (
+        <SwitchFamilySheet initialCode={invite} onClose={() => setInvite('')} />
+      )}
+      {notice && (
+        <div className="fixed left-4 right-4 z-[60] bg-gray-800 border border-green-500/40 text-green-200 text-sm rounded-xl px-4 py-3 shadow-xl"
+          style={{ top: 'max(16px, env(safe-area-inset-top))' }} role="status" onClick={() => setNotice('')}>
+          {notice}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, getDocs, orderBy, query } from 'firebase/firestore'
+import { collection, getDocs, orderBy, query, Timestamp, where } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
 import { fmtDate, localDate, normalizePriceHistory } from '../lib/firestore'
@@ -47,29 +47,41 @@ function Title({ children }) {
 export default function Reports() {
   const { familyId, profiles } = useFamily()
   const [loading, setLoading] = useState(true)
+  const [ready, setReady] = useState(false)
   const [history, setHistory] = useState([])
   const [catalog, setCatalog] = useState([])
   const [tab, setTab] = useState('summary')
   const [preset, setPreset] = useState('month')
   const [custom, setCustom] = useState(() => ({ from: localDate(new Date(new Date().setDate(1))), to: localDate() }))
 
+  const range = rangeFor(preset, new Date(), custom)
+  const prev = previousRange(range)
+  const fromMs = prev.start.getTime()
+  const toMs = range.end.getTime()
+
   useEffect(() => {
     if (!familyId) return
-    Promise.all([
-      getDocs(query(collection(db, 'families', familyId, 'history'), orderBy('createdAt', 'desc'))),
-      getDocs(query(collection(db, 'families', familyId, 'catalog'), orderBy('name'))),
-    ]).then(([hSnap, cSnap]) => {
-      setHistory(hSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+    getDocs(query(collection(db, 'families', familyId, 'catalog'), orderBy('name'))).then(cSnap => {
       setCatalog(cSnap.docs.map(d => {
         const data = d.data()
         return { id: d.id, ...data, priceHistory: normalizePriceHistory(data.priceHistory) }
       }))
-      setLoading(false)
     })
   }, [familyId])
 
-  const range = rangeFor(preset, new Date(), custom)
-  const prev = previousRange(range)
+  // Só as compras do período escolhido e do anterior (para comparar), não o histórico inteiro
+  useEffect(() => {
+    if (!familyId) return
+    let alive = true
+    setLoading(true)
+    getDocs(query(collection(db, 'families', familyId, 'history'),
+      where('createdAt', '>=', Timestamp.fromMillis(fromMs)), where('createdAt', '<', Timestamp.fromMillis(toMs)),
+      orderBy('createdAt', 'desc')))
+      .then(hSnap => { if (alive) setHistory(hSnap.docs.map(d => ({ id: d.id, ...d.data() }))) })
+      .catch(e => console.error('Erro ao carregar relatórios', e))
+      .finally(() => { if (alive) { setLoading(false); setReady(true) } })
+    return () => { alive = false }
+  }, [familyId, fromMs, toMs])
   const records = history.filter(r => inRange(r.createdAt, range))
   const prevRecords = history.filter(r => inRange(r.createdAt, prev))
   const total = sumTotal(records)
@@ -153,7 +165,8 @@ export default function Reports() {
     downloadFile(`onlist-compras-${from}_a_${to}.csv`, historyCsv(records))
   }
 
-  if (loading) {
+  // Spinner só na primeira carga; ao trocar o período a tela fica e só os números mudam
+  if (!ready) {
     return (
       <div className="flex items-center justify-center min-h-svh bg-gray-900">
         <div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
@@ -165,7 +178,10 @@ export default function Reports() {
     <div className="flex flex-col min-h-svh bg-gray-900">
       <div className="px-4 pt-12 pb-3 border-b border-gray-800">
         <div className="flex items-center justify-between">
-          <h1 className="text-white text-xl font-semibold">Relatórios</h1>
+          <h1 className="text-white text-xl font-semibold flex items-center gap-2">
+            Relatórios
+            {loading && <span className="w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />}
+          </h1>
           {records.length > 0 && tab !== 'prices' && (
             <button onClick={exportPeriod}
               className="text-gray-400 text-xs flex items-center gap-1.5 border border-gray-700 px-3 py-1.5 rounded-lg">
