@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { arrayUnion, collection, doc, getDoc, getDocs, serverTimestamp, Timestamp } from 'firebase/firestore'
+import { arrayUnion, collection, doc, getDoc, getDocs, query, serverTimestamp, Timestamp, where } from 'firebase/firestore'
 import { db } from '../firebase'
 import { apiPost } from '../lib/api'
 import { commitInChunks, queueWrite } from '../lib/firestore'
-import { convertForUnit, mapUnit, marketName, packSize, suggestTarget, UNITS, UNIT_LABELS } from '../lib/nfceMatch'
+import { convertForUnit, findSimilarPurchases, mapUnit, marketName, packSize, suggestTarget, UNITS, UNIT_LABELS } from '../lib/nfceMatch'
 import QrScanner from './QrScanner'
 
 const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
@@ -17,7 +17,10 @@ function qtyText(n) {
 }
 
 // Leitura da NFC-e: QR code -> captcha da SEFAZ -> conferência -> registra a compra
-export default function NfceReader({ familyId, user, catalog: catalogProp, entries = [], listName, mercadoOptions: marketsProp, onClose, onSaved }) {
+export default function NfceReader({ familyId, user, catalog: catalogProp, entries = [], listName, mercadoOptions: marketsProp, reconcileWith = null, onClose, onSaved }) {
+  const [duplicate, setDuplicate] = useState(null)
+  const [similar, setSimilar] = useState([])
+  const [reconcileId, setReconcileId] = useState(reconcileWith?.id || null)
   const [loadedCatalog, setLoadedCatalog] = useState(null)
   const [loadedMarkets, setLoadedMarkets] = useState([])
   const catalog = useMemo(() => catalogProp || loadedCatalog || {}, [catalogProp, loadedCatalog])
@@ -88,7 +91,30 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
     }
   }
 
-  function showReview(n) {
+  // Mesma nota já registrada? Compra manual parecida (para conciliar)?
+  async function checkExisting(n) {
+    const historyCol = collection(db, 'families', familyId, 'history')
+    if (n.key) {
+      const same = await getDoc(doc(historyCol, n.key)).catch(() => null)
+      if (same?.exists()) return { duplicate: { id: same.id, ...same.data() } }
+    }
+    const issued = n.issuedAt ? new Date(n.issuedAt) : new Date()
+    const from = new Date(issued.getFullYear(), issued.getMonth(), issued.getDate() - 1)
+    const to = new Date(issued.getFullYear(), issued.getMonth(), issued.getDate() + 2)
+    const snap = await getDocs(query(historyCol, where('createdAt', '>=', Timestamp.fromDate(from)), where('createdAt', '<', Timestamp.fromDate(to)))).catch(() => null)
+    const records = snap ? snap.docs.map(d => ({ id: d.id, ...d.data() })) : []
+    return { similar: findSimilarPurchases(n, records) }
+  }
+
+  async function showReview(n) {
+    const found = await checkExisting(n)
+    if (found.duplicate) {
+      setDuplicate(found.duplicate)
+      setStep('duplicate')
+      return
+    }
+    setSimilar(found.similar || [])
+    if (!reconcileWith && found.similar?.[0]?.strong) setReconcileId(found.similar[0].record.id)
     setNota(n)
     setMercado(marketName(n.store, mercadoOptions))
     setRows(n.items.map(item => {
@@ -127,23 +153,23 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
     setStep('saving')
     try {
       const key = nota.key
-      if (key) {
-        const existing = await getDoc(doc(db, 'families', familyId, 'history', key)).catch(() => null)
-        if (existing?.exists() && !confirm('Esta nota já foi registrada. Registrar de novo vai substituir o registro anterior. Continuar?')) {
-          setStep('review')
-          return
-        }
-      }
+      const original = reconcileId ? (reconcileWith?.id === reconcileId ? reconcileWith : similar.find(c => c.record.id === reconcileId)?.record) : null
       const chosen = rows.filter(r => r.include).map(r => ({ r, x: resolved(r) }))
       const date = nota.issuedAt ? nota.issuedAt.slice(0, 10) : new Date().toISOString().slice(0, 10)
       const mercadoName = mercado.trim() || 'Não informado'
       const historyRef = key ? doc(db, 'families', familyId, 'history', key) : doc(collection(db, 'families', familyId, 'history'))
-      const ops = [
+      const ops = []
+      // Conciliação: a compra manual é substituída pela versão da nota (mesmo registro, sem duplicar)
+      if (original && original.id !== historyRef.id) {
+        ops.push(b => b.delete(doc(db, 'families', familyId, 'history', original.id)))
+      }
+      ops.push(
         b => b.set(historyRef, {
           createdAt: nota.issuedAt ? Timestamp.fromDate(new Date(nota.issuedAt)) : serverTimestamp(),
           mercado: mercadoName,
-          listName: listName || 'Nota fiscal',
-          finishedBy: user.uid,
+          listName: original?.listName || listName || 'Nota fiscal',
+          finishedBy: original?.finishedBy || user.uid,
+          ...(original ? { reconciledFrom: original.id, reconciledAt: serverTimestamp() } : {}),
           total: nota.total,
           source: 'nfce',
           nfceKey: key || null,
@@ -152,7 +178,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
             name: x.name, qty: x.qty, unit: x.unit, totalPrice: r.nf.total, pricePerUnit: x.unitPrice, category: x.category,
           })),
         }),
-      ]
+      )
       if (mercado.trim()) {
         ops.push(b => b.set(doc(db, 'families', familyId, 'mercados', mercadoName.toLowerCase()), { name: mercadoName }))
       }
@@ -166,13 +192,13 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
           ops.push(b => b.set(doc(db, 'families', familyId, 'nfceMap', r.nf.code), { catalogId: x.key, nfName: r.nf.name }))
         }
       }
-      // Itens da lista que vieram na nota saem da lista
+      // Itens da lista que vieram na nota saem da lista (na conciliação, a compra já tinha sido finalizada)
       const bought = new Set(chosen.map(({ x }) => x.key))
-      const removed = entries.filter(e => bought.has(String(e.name).toLowerCase()))
+      const removed = original ? [] : entries.filter(e => bought.has(String(e.name).toLowerCase()))
       removed.forEach(e => ops.push(b => b.delete(doc(db, 'families', familyId, 'lists', e.listId, 'entries', e.id))))
       queueWrite(commitInChunks(ops), 'registrar a nota')
-      const leftChecked = entries.filter(e => e.checked && !bought.has(String(e.name).toLowerCase())).length
-      onSaved?.({ removed: removed.length, leftChecked })
+      const leftChecked = original ? 0 : entries.filter(e => e.checked && !bought.has(String(e.name).toLowerCase())).length
+      onSaved?.({ removed: removed.length, leftChecked, reconciled: !!original })
     } catch (e) {
       alert('Erro ao registrar: ' + e.message)
       setStep('review')
@@ -228,8 +254,43 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
           </div>
         )}
 
+        {step === 'duplicate' && duplicate && (
+          <div className="flex flex-col items-center text-center pt-12 gap-3">
+            <div className="text-5xl">🧾</div>
+            <h3 className="text-white text-lg font-semibold">Esta nota já está registrada</h3>
+            <p className="text-gray-400 text-sm">
+              {duplicate.mercado} · {duplicate.createdAt?.toDate?.().toLocaleDateString('pt-BR')} · {fmt(duplicate.total)}
+            </p>
+            <p className="text-gray-500 text-xs max-w-xs">A mesma nota não pode ser lançada duas vezes. Para corrigir, apague o registro em Registros e leia a nota de novo.</p>
+            <button onClick={onClose} className="mt-4 bg-gray-800 text-white font-semibold px-8 py-3 rounded-xl">Fechar</button>
+          </div>
+        )}
+
         {step === 'review' && nota && (
           <div>
+            {(reconcileWith || similar.length > 0) && (
+              <div className={`rounded-2xl p-3 mb-3 border ${reconcileId ? 'border-amber-500/40 bg-amber-500/10' : 'border-gray-700 bg-gray-800/40'}`}>
+                <p className="text-amber-200 text-sm font-medium mb-2">
+                  {reconcileWith ? 'Conciliar com esta compra' : 'Parece que esta compra já foi registrada'}
+                </p>
+                {[...(reconcileWith ? [{ record: reconcileWith }] : []), ...similar.filter(c => c.record.id !== reconcileWith?.id)].map(({ record: rec }) => (
+                  <label key={rec.id} className="flex items-center gap-2 py-1 text-sm">
+                    <input type="radio" name="reconcile" checked={reconcileId === rec.id} onChange={() => setReconcileId(rec.id)} className="accent-amber-400" />
+                    <span className="flex-1 text-gray-200">
+                      {rec.createdAt?.toDate?.().toLocaleDateString('pt-BR') || ''} · {rec.mercado} · {rec.items?.length || 0} itens
+                    </span>
+                    <span className="text-gray-300">{fmt(rec.total)}</span>
+                  </label>
+                ))}
+                <label className="flex items-center gap-2 py-1 text-sm">
+                  <input type="radio" name="reconcile" checked={!reconcileId} onChange={() => setReconcileId(null)} className="accent-amber-400" />
+                  <span className="text-gray-300">É outra compra, registrar separada</span>
+                </label>
+                {reconcileId && (
+                  <p className="text-amber-200/70 text-xs mt-1">Ao confirmar, a compra escolhida passa a ter os itens e valores exatos da nota. Nada é duplicado.</p>
+                )}
+              </div>
+            )}
             <div className="bg-gray-800/60 rounded-2xl p-3 mb-4">
               <p className="text-gray-500 text-xs mb-1">Mercado</p>
               <input value={mercado} onChange={e => setMercado(e.target.value)}
@@ -312,7 +373,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
         <div className="border-t border-gray-800 px-4 pt-3" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
           <button onClick={save} disabled={!rows.some(r => r.include)}
             className="w-full bg-green-500 disabled:opacity-40 text-white font-bold py-3.5 rounded-2xl">
-            Registrar compra · {fmt(includedTotal)}
+            {reconcileId ? 'Conciliar compra' : 'Registrar compra'} · {fmt(includedTotal)}
           </button>
         </div>
       )}

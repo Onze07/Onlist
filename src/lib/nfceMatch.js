@@ -122,3 +122,43 @@ export function marketName(store, knownMarkets = []) {
   if (known) return known
   return short.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Mercado'
 }
+
+function toDateValue(v) {
+  if (!v) return null
+  if (v instanceof Date) return v
+  if (typeof v.toDate === 'function') return v.toDate()
+  return new Date(v)
+}
+
+function dayDiff(a, b) {
+  const da = new Date(a.getFullYear(), a.getMonth(), a.getDate())
+  const db = new Date(b.getFullYear(), b.getMonth(), b.getDate())
+  return Math.round(Math.abs(da - db) / 86400000)
+}
+
+// Compras já registradas (sem nota) que parecem ser a mesma da nota lida.
+// Critérios: até 1 dia de diferença + (mesmo mercado, total próximo ou itens em comum).
+export function findSimilarPurchases(nota, records = []) {
+  const issued = toDateValue(nota.issuedAt) || new Date()
+  const nfTokens = new Set(nota.items.flatMap(i => tokens(i.name)))
+  const storeNorm = normalize(nota.store)
+  const out = []
+  for (const r of records) {
+    if (r.nfceKey) continue
+    const when = toDateValue(r.createdAt)
+    if (!when || dayDiff(when, issued) > 1) continue
+    const market = normalize(r.mercado)
+    const marketMatch = !!market && market !== 'nao informado' &&
+      (storeNorm.includes(market) || market.includes(normalize(marketName(nota.store))) || normalize(marketName(nota.store, [r.mercado])) === market)
+    const diff = Math.abs((r.total || 0) - (nota.total || 0))
+    const totalClose = diff <= Math.max(2, (nota.total || 0) * 0.05)
+    const items = r.items || []
+    const overlap = items.length ? items.filter(i => tokens(i.name).some(t => nfTokens.has(t))).length / items.length : 0
+    const sameDay = dayDiff(when, issued) === 0
+    // Itens em comum só contam no mesmo dia (evita sugerir outra ida ao mercado com produtos parecidos)
+    if (!marketMatch && !totalClose && !(overlap >= 0.5 && sameDay)) continue
+    const score = (marketMatch ? 2 : 0) + (totalClose ? 2 : 0) + overlap + (sameDay ? 0.5 : 0)
+    out.push({ record: r, score, marketMatch, totalClose, overlap, strong: marketMatch && totalClose })
+  }
+  return out.sort((a, b) => b.score - a.score)
+}

@@ -31,6 +31,7 @@ export default function History() {
   const { familyId } = useFamily()
   const user = useAuth()
   const [showNfce, setShowNfce] = useState(false)
+  const [reconcile, setReconcile] = useState(null)
   const [records, setRecords] = useState([])
   const [expanded, setExpanded] = useState(null)
 
@@ -80,9 +81,10 @@ export default function History() {
           </div>
         </div>
       </div>
-      {showNfce && (
-        <NfceReader familyId={familyId} user={user} listName="Nota fiscal"
-          onClose={() => setShowNfce(false)} onSaved={() => setShowNfce(false)} />
+      {(showNfce || reconcile) && (
+        <NfceReader familyId={familyId} user={user} listName="Nota fiscal" reconcileWith={reconcile}
+          onClose={() => { setShowNfce(false); setReconcile(null) }}
+          onSaved={() => { setShowNfce(false); setReconcile(null) }} />
       )}
 
       <div className="flex-1 overflow-y-auto pb-20">
@@ -111,7 +113,10 @@ export default function History() {
                     </div>
 
                     <button className="flex-1 text-left" onClick={() => setExpanded(isExpanded ? null : record.id)}>
-                      <div className="text-white text-sm font-medium">{record.mercado}</div>
+                      <div className="text-white text-sm font-medium flex items-center gap-1.5">
+                        {record.mercado}
+                        {record.source === 'nfce' && <span className="text-[10px] text-green-300 bg-green-500/10 px-1.5 py-0.5 rounded">📄 nota</span>}
+                      </div>
                       <div className="text-gray-500 text-xs">{record.listName || 'Lista'} · {record.items?.length || 0} itens</div>
                     </button>
 
@@ -124,6 +129,12 @@ export default function History() {
 
                   {isExpanded && record.items && (
                     <div className="border-t border-gray-800 bg-gray-800/30">
+                      {record.source !== 'nfce' && (
+                        <button onClick={() => setReconcile(record)}
+                          className="w-full text-left px-4 py-2.5 text-green-300 text-sm border-b border-gray-800/60">
+                          📄 Conciliar com a nota fiscal
+                        </button>
+                      )}
                       {record.items.map((item, idx) => (
                         <div key={idx} className={`flex items-center justify-between px-4 py-2 ${idx < record.items.length - 1 ? 'border-b border-gray-800/40' : ''}`}>
                           <div>

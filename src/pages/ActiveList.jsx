@@ -361,10 +361,12 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
           listName={listName}
           mercadoOptions={mercadoOptions}
           onClose={() => setShowNfce(false)}
-          onSaved={({ removed, leftChecked }) => {
+          onSaved={({ removed, leftChecked, reconciled }) => {
             setShowNfce(false)
             clearShopping()
-            setNotice(`Compra registrada pela nota. ${removed} ${removed === 1 ? 'item saiu' : 'itens saíram'} da lista${leftChecked ? `; ${leftChecked} marcado(s) não estavam na nota e continuam na lista` : ''}.`)
+            setNotice(reconciled
+              ? 'Compra conciliada com a nota fiscal. Valores atualizados, sem duplicar.'
+              : `Compra registrada pela nota. ${removed} ${removed === 1 ? 'item saiu' : 'itens saíram'} da lista${leftChecked ? `; ${leftChecked} marcado(s) não estavam na nota e continuam na lista` : ''}.`)
             setTimeout(() => setNotice(''), 7000)
           }}
         />
