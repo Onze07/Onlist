@@ -173,6 +173,7 @@ export default function History() {
                         <div key={idx} className={`flex items-center justify-between px-4 py-2 ${idx < record.items.length - 1 ? 'border-b border-gray-800/40' : ''}`}>
                           <div>
                             <span className="text-gray-300 text-sm">{item.name}</span>
+                            {item.brand && <span className="text-gray-500 text-xs ml-1.5">{item.brand}</span>}
                             <span className="text-gray-600 text-xs ml-2">{item.qty} {item.unit}</span>
                           </div>
                           <span className="text-gray-400 text-sm">{fmt(item.totalPrice)}</span>

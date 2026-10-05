@@ -14,15 +14,17 @@ function fmtBRL(n) {
 
 const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
 
-const empty = { name: '', obs: '', category: 'Mercearia', qty: '1', unit: 'un', pricePerUnit: 0, totalPrice: 0 }
+const empty = { name: '', obs: '', brand: '', category: 'Mercearia', qty: '1', unit: 'un', pricePerUnit: 0, totalPrice: 0 }
 
 // Lembra "Já está no carrinho" enquanto o app estiver aberto (cadastro em série no mercado)
 let lastInCart = false
 
 export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultInCart = false }) {
-  const { familyId, userDoc } = useFamily()
+  const { familyId, userDoc, family } = useFamily()
+  // Marca é opcional: aparece só se a família ligar em Conta
   const decimals = userDoc?.priceDecimals === 3 ? 3 : 2
   const isNew = !initial?.id
+  const brandsOn = !!family?.brandsEnabled
   const [inCart, setInCart] = useState(isNew && (defaultInCart || lastInCart))
   const [form, setForm] = useState(initial ? {
     ...initial,
@@ -83,6 +85,7 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
     onSave({
       name: form.name.trim(),
       obs: (form.obs || '').trim(),
+      brand: (form.brand || '').trim(),
       category: form.category,
       qty: parsePrice(form.qty) || 1,
       unit: form.unit,
@@ -165,13 +168,23 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
           </div>
         </div>
 
-        {/* Observação */}
-        <input
-          value={form.obs}
-          onChange={e => set('obs', e.target.value)}
-          placeholder="Observação (opcional)"
-          className={`w-full px-3 py-2 mb-3 text-base text-gray-300 ${field}`}
-        />
+        {/* Observação (+ marca, se a família usa) */}
+        <div className="flex gap-2 mb-3">
+          {brandsOn && (
+            <input
+              value={form.brand || ''}
+              onChange={e => set('brand', e.target.value)}
+              placeholder="Marca (opcional)"
+              className={`w-2/5 min-w-0 px-3 py-2 text-base text-gray-300 ${field}`}
+            />
+          )}
+          <input
+            value={form.obs}
+            onChange={e => set('obs', e.target.value)}
+            placeholder={brandsOn ? "Observação" : "Observação (opcional)"}
+            className={`flex-1 min-w-0 px-3 py-2 text-base text-gray-300 ${field}`}
+          />
+        </div>
 
         {isNew && (
           <button type="button" onClick={() => setInCart(v => !v)}

@@ -43,7 +43,7 @@ export default function Account() {
   const user = useAuth()
   const {
     family, profiles, isOwner, isAdmin, seats,
-    renameFamily, regenerateCode, removeMember, setAdmin, leaveFamily, deleteAccount, transferOwnership,
+    renameFamily, regenerateCode, removeMember, setAdmin, leaveFamily, deleteAccount, transferOwnership, updateFamilySettings,
     userDoc, updateUserDoc,
   } = useFamily()
   const decimals = userDoc?.priceDecimals === 3 ? 3 : 2
@@ -135,6 +135,18 @@ export default function Account() {
             </div>
           )}
         </div>
+        {isAdmin && (
+          <button disabled={busy} onClick={() => run(() => updateFamilySettings({ brandsEnabled: !family.brandsEnabled }))}
+            className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left border-b border-gray-800" aria-pressed={!!family.brandsEnabled}>
+            <span>
+              <span className="text-white text-sm block">Anotar marca dos produtos</span>
+              <span className="text-gray-500 text-xs">Campo opcional no item. O produto continua um só (ex.: Arroz).</span>
+            </span>
+            <span className={`w-11 h-6 rounded-full p-0.5 transition-colors flex-shrink-0 ${family.brandsEnabled ? 'bg-green-500' : 'bg-gray-700'}`}>
+              <span className={`block w-5 h-5 rounded-full bg-white transition-transform ${family.brandsEnabled ? 'translate-x-5' : ''}`} />
+            </span>
+          </button>
+        )}
         <div className="p-4 flex items-center justify-between">
           <span className="text-gray-400 text-sm">{family.plan?.name ? `Plano ${family.plan.name}` : 'Pessoas na família'}</span>
           <span className={`text-sm font-medium ${full ? 'text-amber-400' : 'text-gray-300'}`}>

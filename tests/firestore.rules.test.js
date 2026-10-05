@@ -149,6 +149,11 @@ test('dono passa a posse para um membro e vira admin', async () => {
   await assertSucceeds(updateDoc(doc(as('alice'), 'families/fam1'), { members: ['adam', 'mia'], admins: ['adam'] }))
 })
 
+test('admin liga marcas; membro comum não', async () => {
+  await assertSucceeds(updateDoc(doc(as('adam'), 'families/fam1'), { brandsEnabled: true }))
+  await assertFails(updateDoc(doc(as('mia'), 'families/fam1'), { brandsEnabled: false }))
+})
+
 test('admin não passa a posse', async () => {
   await assertFails(updateDoc(doc(as('adam'), 'families/fam1'), { createdBy: 'adam' }))
 })

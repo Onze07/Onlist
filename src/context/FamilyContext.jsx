@@ -194,6 +194,11 @@ export function FamilyProvider({ children }) {
     await batch.commit()
   }
 
+  // Preferências da família (ex.: brandsEnabled). Só admin, pelas regras.
+  async function updateFamilySettings(fields) {
+    await updateDoc(doc(db, 'families', family.id), fields)
+  }
+
   async function setAdmin(uid, value) {
     await updateDoc(doc(db, 'families', family.id), { admins: value ? arrayUnion(uid) : arrayRemove(uid) })
   }
@@ -285,7 +290,7 @@ export function FamilyProvider({ children }) {
     <FamilyContext.Provider value={{
       familyId: family ? familyId : null, family, profiles, loading, isOwner, isAdmin, seats,
       userDoc, updateUserDoc, deleteAccount, notice, setNotice,
-      createFamily, joinFamily, switchFamily, transferOwnership, renameFamily, regenerateCode, removeMember, setAdmin, leaveFamily,
+      createFamily, joinFamily, switchFamily, transferOwnership, updateFamilySettings, renameFamily, regenerateCode, removeMember, setAdmin, leaveFamily,
     }}>
       {children}
     </FamilyContext.Provider>
