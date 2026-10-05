@@ -60,3 +60,15 @@ export function compareList(entries = [], catalog = {}) {
     }))
     .sort((a, b) => b.coveredCount - a.coveredCount || a.total - b.total)
 }
+
+// Histórico de preço guardado no item do catálogo. Acima do limite, o documento cresce à toa
+// (o Firestore aceita até 1 MB por documento), então só os mais recentes ficam.
+export const PRICE_HISTORY_MAX = 60
+
+// Retorna null quando cabe (use arrayUnion, que não perde gravações simultâneas)
+// ou a lista já cortada com o preço novo no fim.
+export function trimPriceHistory(history = [], entry, max = PRICE_HISTORY_MAX) {
+  const current = normalizePriceHistory(history)
+  if (current.length < max) return null
+  return [...current.slice(-(max - 1)), entry]
+}

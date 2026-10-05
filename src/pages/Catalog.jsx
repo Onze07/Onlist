@@ -166,7 +166,7 @@ export default function Catalog({ onAddToList }) {
                     <div className="flex flex-col gap-1">
                       {[...item.priceHistory].reverse().map((h, idx) => (
                         <div key={idx} className="flex justify-between text-xs gap-3">
-                          <span className="text-gray-500">{fmtDate(h.date)}{h.mercado ? ` · ${h.mercado}` : ''}</span>
+                          <span className="text-gray-500">{fmtDate(h.date)}{h.mercado ? ` · ${h.mercado}` : ''}{h.brand ? ` · ${h.brand}` : ''}</span>
                           <span className="text-gray-300 flex-shrink-0">{fmt(h.price)}/{item.unit}</span>
                         </div>
                       ))}

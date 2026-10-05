@@ -1,5 +1,6 @@
-import { writeBatch } from 'firebase/firestore'
+import { arrayUnion, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase'
+import { trimPriceHistory } from './prices.js'
 
 // Firestore aceita até 500 operações por batch
 const BATCH_LIMIT = 450
@@ -23,6 +24,12 @@ export function queueWrite(promise, what = 'salvar') {
     console.error(`Erro ao ${what}`, e)
     window.dispatchEvent(new CustomEvent('onlist:write-error', { detail: { what, message: e.message } }))
   })
+}
+
+// Valor do campo priceHistory ao registrar um preço. Normalmente arrayUnion (duas pessoas finalizando
+// offline não apagam o registro uma da outra); no limite, grava a lista já cortada.
+export function priceHistoryWrite(history, entry) {
+  return trimPriceHistory(history, entry) ?? arrayUnion(entry)
 }
 
 // Reexporta as funções puras para manter os imports existentes

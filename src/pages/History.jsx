@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { collection, onSnapshot, orderBy, query, deleteDoc, doc } from 'firebase/firestore'
+import { useEffect, useRef, useState } from 'react'
+import { collection, onSnapshot, orderBy, query, deleteDoc, doc, getDocs, limit } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
 import { IconTrash, IconChevronDown, IconChevronRight, IconDownload } from '../components/Icon'
@@ -27,6 +27,9 @@ function dayLabel(ts) {
   }
 }
 
+// Carrega aos poucos: abrir a tela não lê o histórico inteiro
+const PAGE = 30
+
 export default function History() {
   const { familyId } = useFamily()
   const user = useAuth()
@@ -34,14 +37,32 @@ export default function History() {
   const [reconcile, setReconcile] = useState(null)
   const [records, setRecords] = useState([])
   const [expanded, setExpanded] = useState(null)
+  const [pageSize, setPageSize] = useState(PAGE)
+  const [loadedSize, setLoadedSize] = useState(0)
+  const [exporting, setExporting] = useState(false)
+  const sentinelRef = useRef(null)
+  const hasMore = records.length >= pageSize
+  const loadingMore = loadedSize < pageSize
 
   useEffect(() => {
     if (!familyId) return
-    const q = query(collection(db, 'families', familyId, 'history'), orderBy('createdAt', 'desc'))
+    const q = query(collection(db, 'families', familyId, 'history'), orderBy('createdAt', 'desc'), limit(pageSize))
     return onSnapshot(q, snap => {
       setRecords(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setLoadedSize(pageSize)
     })
-  }, [familyId])
+  }, [familyId, pageSize])
+
+  // Chegou perto do fim da lista: carrega mais
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || !hasMore || loadingMore) return
+    const io = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) setPageSize(n => n + PAGE)
+    }, { rootMargin: '400px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [hasMore, loadingMore])
 
   async function deleteRecord(id, mercado) {
     if (!confirm(`Excluir registro de "${mercado}"?`)) return
@@ -49,8 +70,16 @@ export default function History() {
     if (expanded === id) setExpanded(null)
   }
 
-  function exportCsv() {
-    downloadFile(`onlist-compras-${localDate()}.csv`, historyCsv(records))
+  // A exportação busca tudo, não só o que já está na tela
+  async function exportCsv() {
+    setExporting(true)
+    try {
+      const snap = await getDocs(query(collection(db, 'families', familyId, 'history'), orderBy('createdAt', 'desc')))
+      downloadFile(`onlist-compras-${localDate()}.csv`, historyCsv(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+    } catch (e) {
+      alert('Erro ao exportar: ' + e.message)
+    }
+    setExporting(false)
   }
 
   // Group by month
@@ -61,6 +90,9 @@ export default function History() {
     byMonth[m].total += r.total || 0
     byMonth[m].items.push(r)
   }
+  // O último mês carregado pode estar incompleto enquanto houver mais registros
+  const months = Object.values(byMonth)
+  const partialMonth = hasMore ? months[months.length - 1]?.label : null
 
   return (
     <div className="flex flex-col min-h-svh bg-gray-900">
@@ -73,9 +105,9 @@ export default function History() {
               📷 Nota fiscal
             </button>
             {records.length > 0 && (
-              <button onClick={exportCsv}
-                className="text-gray-400 text-xs flex items-center gap-1.5 border border-gray-700 px-3 py-1.5 rounded-lg">
-                <IconDownload size={14} /> Exportar
+              <button onClick={exportCsv} disabled={exporting}
+                className="disabled:opacity-50 text-gray-400 text-xs flex items-center gap-1.5 border border-gray-700 px-3 py-1.5 rounded-lg">
+                <IconDownload size={14} /> {exporting ? 'Exportando...' : 'Exportar'}
               </button>
             )}
           </div>
@@ -94,11 +126,11 @@ export default function History() {
           </div>
         )}
 
-        {Object.values(byMonth).map(month => (
+        {months.map(month => (
           <div key={month.label}>
             <div className="flex justify-between items-center px-4 py-3 sticky top-0 bg-gray-900 border-b border-gray-800">
               <span className="text-gray-500 text-xs uppercase tracking-wider capitalize">{month.label}</span>
-              <span className="text-gray-400 text-xs font-medium">{fmt(month.total)}</span>
+              <span className="text-gray-400 text-xs font-medium">{month.label === partialMonth ? 'carregando…' : fmt(month.total)}</span>
             </div>
 
             {month.items.map(record => {
@@ -141,6 +173,7 @@ export default function History() {
                         <div key={idx} className={`flex items-center justify-between px-4 py-2 ${idx < record.items.length - 1 ? 'border-b border-gray-800/40' : ''}`}>
                           <div>
                             <span className="text-gray-300 text-sm">{item.name}</span>
+                            {item.brand && <span className="text-gray-500 text-xs ml-1.5">{item.brand}</span>}
                             <span className="text-gray-600 text-xs ml-2">{item.qty} {item.unit}</span>
                           </div>
                           <span className="text-gray-400 text-sm">{fmt(item.totalPrice)}</span>
@@ -153,6 +186,14 @@ export default function History() {
             })}
           </div>
         ))}
+        {hasMore && (
+          <div ref={sentinelRef} className="flex justify-center py-6">
+            <button onClick={() => setPageSize(n => n + PAGE)} disabled={loadingMore}
+              className="text-gray-400 text-xs border border-gray-700 px-4 py-2 rounded-full disabled:opacity-50">
+              {loadingMore ? 'Carregando...' : 'Carregar mais'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

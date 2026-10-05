@@ -111,3 +111,36 @@ test('filtro por período', () => {
   assert.ok(inRange({ toDate: () => new Date(2026, 9, 1) }, r))
   assert.ok(!inRange(null, r))
 })
+
+// --- Limite do histórico de preço ---
+import { trimPriceHistory, PRICE_HISTORY_MAX } from '../src/lib/prices.js'
+
+test('histórico de preço: abaixo do limite usa arrayUnion (null), no limite corta os antigos', () => {
+  const entry = { price: 9, date: '2026-12-31', mercado: 'IG' }
+  assert.equal(trimPriceHistory([], entry), null)
+  const full = Array.from({ length: PRICE_HISTORY_MAX }, (_, i) => ({ price: 1, date: `2026-01-${String(i % 28 + 1).padStart(2, '0')}`, mercado: `M${i}` }))
+  const r = trimPriceHistory(full, entry)
+  assert.equal(r.length, PRICE_HISTORY_MAX)
+  assert.deepEqual(r[r.length - 1], entry)
+})
+
+// --- Calculadora "qual compensa" ---
+import { compareUnitPrices } from '../src/lib/unitPrice.js'
+
+test('calculadora: compara por kg mesmo com gramas e quilos', () => {
+  const r = compareUnitPrices([{ price: 5, qty: 500, unit: 'g' }, { price: 9, qty: 1, unit: 'kg' }])
+  assert.equal(r.rows[0].per, 10)
+  assert.equal(r.rows[1].per, 9)
+  assert.equal(r.rows[1].best, true)
+  assert.ok(Math.abs(r.rows[0].extraPct - 1 / 9) < 1e-9)
+  assert.equal(r.mixed, false)
+})
+
+test('calculadora: medidas diferentes não elegem vencedor; linha vazia é ignorada', () => {
+  const r = compareUnitPrices([{ price: 5, qty: 1, unit: 'kg' }, { price: 4, qty: 1, unit: 'l' }])
+  assert.equal(r.mixed, true)
+  assert.equal(r.rows.some(x => x.best), false)
+  const r2 = compareUnitPrices([{ price: 5, qty: 2, unit: 'un' }, { price: 0, qty: 1, unit: 'un' }])
+  assert.equal(r2.rows[0].best, false) // só uma opção preenchida
+  assert.equal(r2.rows[1].per, null)
+})

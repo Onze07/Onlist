@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   collection, onSnapshot, addDoc, updateDoc, deleteDoc,
-  doc, setDoc, serverTimestamp, getDocs, query, orderBy, arrayUnion
+  doc, setDoc, serverTimestamp, getDocs, query, orderBy
 } from 'firebase/firestore'
 import { db } from '../firebase'
-import { commitInChunks, localDate, queueWrite } from '../lib/firestore'
+import { commitInChunks, localDate, priceHistoryWrite, queueWrite } from '../lib/firestore'
 import { useFamily } from '../context/FamilyContext'
 import { useAuth } from '../context/AuthContext'
 import ItemForm from '../components/ItemForm'
@@ -18,7 +18,8 @@ import { sendNotify } from '../lib/push'
 import { useOnline, useWriteErrors } from '../lib/useSync'
 import { usePresence } from '../lib/usePresence'
 import { cheapest } from '../lib/prices'
-import { IconChevronDown, IconCheck, IconPlus, IconX, IconBell, IconScale, IconUndo, IconTrash } from '../components/Icon'
+import { IconChevronDown, IconCheck, IconPlus, IconX, IconBell, IconScale, IconUndo, IconTrash, IconCalc } from '../components/Icon'
+import PriceCalculator from '../components/PriceCalculator'
 import ActionChip from '../components/ActionChip'
 
 const CATEGORY_ORDER = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
@@ -32,6 +33,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   const user = useAuth()
   const decimals = userDoc?.priceDecimals === 3 ? 3 : 2
   const [showCompare, setShowCompare] = useState(false)
+  const [showCalc, setShowCalc] = useState(false)
   const [listId, setListId] = useState(null)
   const [listName, setListName] = useState('')
   const [entries, setEntries] = useState([])
@@ -128,7 +130,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       category: pendingAddFromCatalog.category || 'Mercearia',
       unit: pendingAddFromCatalog.unit || 'un',
       pricePerUnit: pendingAddFromCatalog.lastPrice || 0,
-      obs: '', qty: 1,
+      obs: '', brand: '', qty: 1,
       totalPrice: pendingAddFromCatalog.lastPrice || 0,
     })
     setShowForm(true)
@@ -260,21 +262,25 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
         listName,
         finishedBy: user.uid,
         total: totalChecked,
-        items: checked.map(e => ({ name: e.name, qty: e.qty, unit: e.unit, totalPrice: e.totalPrice, pricePerUnit: e.pricePerUnit, category: e.category })),
+        items: checked.map(e => ({
+          name: e.name, qty: e.qty, unit: e.unit, totalPrice: e.totalPrice, pricePerUnit: e.pricePerUnit, category: e.category,
+          ...(e.brand ? { brand: e.brand } : {}),
+        })),
       }),
     ]
     if (mercado.trim()) {
       ops.push(b => b.set(doc(db, 'families', familyId, 'mercados', mercado.trim().toLowerCase()), { name: mercado.trim() }))
     }
-    // Histórico de preço com arrayUnion: duas pessoas finalizando offline não apagam o registro uma da outra.
-    // Repetições antigas são filtradas na exibição (normalizePriceHistory).
+    // Histórico de preço (priceHistoryWrite): arrayUnion até o limite. Repetições são filtradas na exibição.
     for (const e of checked) {
       if (Number(e.pricePerUnit) > 0) {
         const key = e.name.toLowerCase()
         ops.push(b => b.set(doc(db, 'families', familyId, 'catalog', key), {
           name: e.name, category: e.category, unit: e.unit,
           lastPrice: e.pricePerUnit,
-          priceHistory: arrayUnion({ price: Number(e.pricePerUnit), date: today, mercado: mercadoName }),
+          priceHistory: priceHistoryWrite(catalog[key]?.priceHistory, {
+            price: Number(e.pricePerUnit), date: today, mercado: mercadoName, ...(e.brand ? { brand: e.brand } : {}),
+          }),
         }, { merge: true }))
       }
     }
@@ -407,23 +413,22 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       <PresenceBanner people={othersShopping} />
 
       {/* Ações: ícones conhecidos sem texto, para caber tudo numa linha */}
-      {(pending.length > 0 || checked.length > 0) && (
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-800">
-          {entries.length > 0 && (
-            <ActionChip icon={<IconScale size={15} />} onClick={() => setShowCompare(true)}>Comparar preços</ActionChip>
-          )}
-          {pending.length > 0 && (
-            <ActionChip icon={<IconBell size={16} />} label="Avisar alguém" onClick={() => setShowNotify(true)} />
-          )}
-          <span className="flex-1" />
-          {checked.length > 0 && (
-            <ActionChip icon={<IconUndo size={16} />} label="Desmarcar tudo" onClick={uncheckAll} />
-          )}
-          {pending.length > 0 && (
-            <ActionChip icon={<IconTrash size={16} />} label="Limpar pendentes" tone="danger" onClick={clearPending} />
-          )}
-        </div>
-      )}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-800">
+        <ActionChip icon={<IconCalc size={16} />} label="Qual compensa? (preço por kg/L/un)" onClick={() => setShowCalc(true)} />
+        {entries.length > 0 && (
+          <ActionChip icon={<IconScale size={15} />} onClick={() => setShowCompare(true)} label="Comparar preços entre mercados">Comparar</ActionChip>
+        )}
+        {pending.length > 0 && (
+          <ActionChip icon={<IconBell size={16} />} label="Avisar alguém" onClick={() => setShowNotify(true)} />
+        )}
+        <span className="flex-1" />
+        {checked.length > 0 && (
+          <ActionChip icon={<IconUndo size={16} />} label="Desmarcar tudo" onClick={uncheckAll} />
+        )}
+        {pending.length > 0 && (
+          <ActionChip icon={<IconTrash size={16} />} label="Limpar pendentes" tone="danger" onClick={clearPending} />
+        )}
+      </div>
 
       {/* List */}
       <div className="flex-1 overflow-y-auto pb-28">
@@ -500,6 +505,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
         <NotifySheet listName={listName} pendingCount={pending.length} onClose={() => setShowNotify(false)} />
       )}
 
+      {showCalc && <PriceCalculator onClose={() => setShowCalc(false)} />}
       {showCompare && (
         <CompareMarkets entries={entries} catalog={catalog} onClose={() => setShowCompare(false)} />
       )}
@@ -532,6 +538,7 @@ function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked
 
       <div className="flex-1 min-w-0 cursor-pointer" onClick={onEdit}>
         <span className={`text-sm ${isChecked ? 'line-through text-gray-600' : 'text-white'}`}>{entry.name}</span>
+        {entry.brand && <span className="text-[10px] text-gray-300 bg-gray-800 border border-gray-700 px-1.5 py-0.5 rounded ml-2 align-middle">{entry.brand}</span>}
         {entry.obs && <span className="text-gray-600 text-xs ml-2">{entry.obs}</span>}
         <div className="text-gray-600 text-xs mt-0.5">
           {entry.qty} {entry.unit}

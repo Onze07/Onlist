@@ -6,6 +6,9 @@ import { AuthProvider } from './context/AuthContext'
 import { FamilyProvider } from './context/FamilyContext'
 import { registerSW } from 'virtual:pwa-register'
 import './lib/install'
+import { captureInviteFromUrl } from './lib/invite'
+
+captureInviteFromUrl()
 
 // Versão nova publicada: atualiza sozinho. Checa ao abrir/voltar para o app e a cada 30 min.
 registerSW({

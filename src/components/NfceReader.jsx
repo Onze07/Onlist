@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { arrayUnion, collection, doc, getDoc, getDocs, query, serverTimestamp, Timestamp, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, serverTimestamp, Timestamp, where } from 'firebase/firestore'
 import { db } from '../firebase'
 import { apiPost } from '../lib/api'
-import { commitInChunks, queueWrite } from '../lib/firestore'
+import { commitInChunks, priceHistoryWrite, queueWrite } from '../lib/firestore'
 import { convertForUnit, findSimilarPurchases, mapUnit, marketName, packSize, suggestTarget, UNITS, UNIT_LABELS } from '../lib/nfceMatch'
 import QrScanner from './QrScanner'
 
@@ -186,7 +186,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
         ops.push(b => b.set(doc(db, 'families', familyId, 'catalog', x.key), {
           name: x.name, category: x.category, unit: x.unit,
           lastPrice: x.unitPrice,
-          priceHistory: arrayUnion({ price: x.unitPrice, date, mercado: mercadoName }),
+          priceHistory: priceHistoryWrite(catalog[x.key]?.priceHistory, { price: x.unitPrice, date, mercado: mercadoName }),
         }, { merge: true }))
         if (r.nf.code) {
           ops.push(b => b.set(doc(db, 'families', familyId, 'nfceMap', r.nf.code), { catalogId: x.key, nfName: r.nf.name }))
