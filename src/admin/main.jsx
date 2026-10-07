@@ -61,4 +61,4 @@ function AdminRoot() {
   return <AdminPanel user={user} onSignOut={() => signOut(adminAuth)} />
 }
 
-createRoot(document.getElementById('root')).render(<StrictMode><AdminRoot /></StrictMode>)
+createRoot(document.getElementById('admin-root')).render(<StrictMode><AdminRoot /></StrictMode>)
