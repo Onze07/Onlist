@@ -257,13 +257,17 @@ function SortTh({ id, sort, setSort, children, className = '' }) {
 // Atendimento das mensagens do "Enviar feedback": novo -> em andamento -> resolvido
 function SupportItem({ f, onChanged }) {
   const [note, setNote] = useState(f.adminNote)
+  const [reply, setReply] = useState(f.reply || '')
   const [busy, setBusy] = useState(false)
   const s = FEEDBACK[f.status] || FEEDBACK.new
 
   async function update(status) {
     setBusy(true)
     try {
-      await adminApi('feedbackStatus', { id: f.id, status, note })
+      const r = await adminApi('feedbackStatus', { id: f.id, status, note, reply })
+      if (status === 'done' && r.notified) {
+        alert(r.notified.pushed > 0 ? 'Resolvido. O usuário recebeu o aviso no celular e verá a resposta no app.' : 'Resolvido. O usuário verá a resposta ao abrir o app (avisos no celular desligados).')
+      }
       onChanged()
     } catch (e) {
       alert(e.message)
@@ -283,6 +287,13 @@ function SupportItem({ f, onChanged }) {
         </span>
       </div>
       <p className="text-gray-100 text-sm whitespace-pre-wrap">{f.message}</p>
+      {f.status !== 'done' ? (
+        <textarea value={reply} onChange={e => setReply(e.target.value)} rows={2} maxLength={500}
+          placeholder="Resposta para o usuário (aparece no app ao marcar resolvido)"
+          className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 text-sm outline-none border border-gray-700 focus:border-green-500 resize-none" />
+      ) : f.reply && (
+        <p className="text-sm text-green-200/90 bg-green-500/10 border border-green-500/20 rounded-lg px-3 py-2 whitespace-pre-wrap">Resposta: {f.reply}</p>
+      )}
       <input value={note} onChange={e => setNote(e.target.value)} placeholder="Anotação interna (o usuário não vê)"
         className="w-full bg-gray-800 text-white rounded-lg px-3 h-9 text-sm outline-none border border-gray-700 focus:border-green-500" />
       <div className="flex flex-wrap items-center gap-2">

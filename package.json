@@ -9,7 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test:rules": "npx -y firebase-tools@15 emulators:exec --only firestore,auth --project onlist-test \"node --test tests/firestore.rules.test.js tests/family.emulator.test.js tests/admin.emulator.test.js\"",
-    "test": "node --test tests/lib.test.js tests/notify.test.js tests/nfce.test.js"
+    "test": "node --test tests/lib.test.js tests/notify.test.js tests/nfce.test.js tests/support.test.js"
   },
   "dependencies": {
     "firebase": "^12.15.0",

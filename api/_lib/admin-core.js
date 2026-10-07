@@ -219,23 +219,32 @@ export async function listFeedback({ fs, limit = 100 }) {
     const f = d.data()
     return {
       id: d.id, createdAt: iso(f.createdAt), email: f.email || null, familyId: f.familyId || null, type: f.type || null,
-      message: f.message || '', userAgent: f.userAgent || null,
+      message: f.message || '', userAgent: f.userAgent || null, reply: f.reply || '',
       status: f.status || 'new', adminNote: f.adminNote || '', handledAt: iso(f.handledAt), handledBy: f.handledBy || null,
     }
   })
 }
 
-// Atendimento: novo -> em andamento -> resolvido, com anotação interna
-export async function setFeedbackStatus({ fs, id, status, note, adminEmail }) {
+// Atendimento: novo -> em andamento -> resolvido, com anotação interna (só o admin vê)
+// e resposta ao usuário (aparece no app). onResolved avisa o usuário ao passar para "resolvido".
+export async function setFeedbackStatus({ fs, id, status, note, reply, adminEmail, onResolved }) {
   if (!id || typeof id !== 'string') throw new AdminError(400, 'Mensagem inválida')
   if (!FEEDBACK_STATUS.includes(status)) throw new AdminError(400, 'Situação inválida')
   const ref = fs.doc(`feedback/${id}`)
-  if (!(await ref.get()).exists) throw new AdminError(404, 'Mensagem não encontrada')
+  const snap = await ref.get()
+  if (!snap.exists) throw new AdminError(404, 'Mensagem não encontrada')
+  const before = snap.data()
+  const replyText = reply !== undefined ? String(reply || '').trim().slice(0, 500) : before.reply || ''
   await ref.update({
     status,
     ...(note !== undefined ? { adminNote: String(note || '').trim().slice(0, 1000) } : {}),
+    ...(reply !== undefined ? { reply: replyText } : {}),
     handledAt: FieldValue.serverTimestamp(),
     handledBy: adminEmail || null,
   })
-  return { ok: true }
+  let notified = null
+  if (status === 'done' && (before.status || 'new') !== 'done' && onResolved) {
+    notified = await onResolved({ feedback: { id, ...before }, reply: replyText })
+  }
+  return { ok: true, notified }
 }

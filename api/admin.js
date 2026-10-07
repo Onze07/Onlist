@@ -3,7 +3,9 @@
 import { initializeApp, cert, getApps } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
 import { getFirestore } from 'firebase-admin/firestore'
+import { getMessaging } from 'firebase-admin/messaging'
 import { AdminError, isAdminEmail, overview, familyDetail, setPlan, listFeedback, setFeedbackStatus } from './_lib/admin-core.js'
+import { notifyResolved } from './_lib/support-core.js'
 
 export const config = { maxDuration: 60 }
 
@@ -40,7 +42,12 @@ export default async function handler(req, res) {
       case 'family': return res.status(200).json(await familyDetail({ fs, auth, familyId: body.familyId }))
       case 'setPlan': return res.status(200).json(await setPlan({ fs, familyId: body.familyId, plan: body.plan, adminEmail: token.email }))
       case 'feedback': return res.status(200).json({ feedback: await listFeedback({ fs }) })
-      case 'feedbackStatus': return res.status(200).json(await setFeedbackStatus({ fs, id: body.id, status: body.status, note: body.note, adminEmail: token.email }))
+      case 'feedbackStatus': return res.status(200).json(await setFeedbackStatus({
+        fs, id: body.id, status: body.status, note: body.note, reply: body.reply, adminEmail: token.email,
+        // Resolvido: cartão no app + push "Sua solicitação foi atendida" (falha no push não desfaz a mudança)
+        onResolved: ({ feedback, reply }) => notifyResolved({ fs, messaging: getMessaging(), feedback, reply })
+          .catch(e => { console.error('support notify', e); return { pushed: 0, error: true } }),
+      }))
       default: return res.status(400).json({ error: 'Pedido inválido' })
     }
   } catch (e) {

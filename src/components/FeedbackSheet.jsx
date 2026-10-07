@@ -1,7 +1,5 @@
 import { useState } from 'react'
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
-import { db } from '../firebase'
-import { useAuth } from '../context/AuthContext'
+import { apiPost } from '../lib/api'
 import { useFamily } from '../context/FamilyContext'
 import Sheet from './Sheet'
 
@@ -12,7 +10,6 @@ const TYPES = [
 ]
 
 export default function FeedbackSheet({ onClose }) {
-  const user = useAuth()
   const { familyId } = useFamily()
   const [type, setType] = useState('sugestao')
   const [message, setMessage] = useState('')
@@ -22,18 +19,16 @@ export default function FeedbackSheet({ onClose }) {
     if (!message.trim()) return
     setStatus('sending')
     try {
-      await addDoc(collection(db, 'feedback'), {
-        uid: user.uid,
-        email: user.email,
+      // Pelo servidor: grava e avisa o suporte por e-mail
+      await apiPost('/api/feedback', {
         familyId: familyId || null,
         type,
         message: message.trim().slice(0, 2000),
         userAgent: navigator.userAgent.slice(0, 300),
-        createdAt: serverTimestamp(),
       })
       setStatus('sent')
     } catch (e) {
-      alert('Erro ao enviar: ' + e.message)
+      alert(navigator.onLine ? 'Erro ao enviar: ' + e.message : 'Sem internet. Tente de novo quando a conexão voltar.')
       setStatus('idle')
     }
   }
@@ -44,7 +39,7 @@ export default function FeedbackSheet({ onClose }) {
         <div className="text-center py-4">
           <div className="text-4xl mb-3">🙏</div>
           <h2 className="text-white text-lg font-semibold mb-1">Obrigado!</h2>
-          <p className="text-gray-400 text-sm mb-6">Sua mensagem chegou. Ela ajuda a melhorar o Onlist.</p>
+          <p className="text-gray-400 text-sm mb-6">Sua mensagem chegou. Quando respondermos, você recebe um aviso aqui no app.</p>
           <button onClick={onClose} className="w-full bg-green-500 text-white font-semibold py-3 rounded-xl">Fechar</button>
         </div>
       </Sheet>
