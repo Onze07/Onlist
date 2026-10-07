@@ -13,6 +13,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Só o app tem largura de celular; o painel (#admin-root, admin.html) usa a tela toda */
 #root {
   min-height: 100svh;
   max-width: 480px;
