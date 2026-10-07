@@ -4,6 +4,12 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  // Duas páginas: o app (index.html) e o painel administrativo (admin.html, fora do PWA)
+  build: {
+    rollupOptions: {
+      input: { main: 'index.html', admin: 'admin.html' },
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -14,6 +20,8 @@ export default defineConfig({
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.js',
+      // O painel não entra no cache offline do app
+      injectManifest: { globIgnores: ['**/admin.html', '**/assets/admin-*.js'] },
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Onlist',

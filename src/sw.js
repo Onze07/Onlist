@@ -9,7 +9,8 @@ clientsClaim()
 
 cleanupOutdatedCaches()
 precacheAndRoute(self.__WB_MANIFEST)
-registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html')))
+// /admin é outra página (painel): não responder com o app
+registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html'), { denylist: [/^\/admin/] }))
 
 // Mensagens só com "data" (enviadas por /api/notify): o próprio SW mostra o aviso
 self.addEventListener('push', event => {
