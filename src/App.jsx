@@ -15,6 +15,7 @@ import Welcome from './components/Welcome'
 import InstallBanner from './components/InstallBanner'
 import { LEGAL_VERSION } from './lib/legal'
 import SwitchFamilySheet from './components/SwitchFamilySheet'
+import SupportReply from './components/SupportReply'
 import { clearPendingInvite, getPendingInvite } from './lib/invite'
 
 function useHash() {
@@ -29,7 +30,7 @@ function useHash() {
 
 export default function App() {
   const user = useAuth()
-  const { familyId, family, loading, userDoc, notice, setNotice } = useFamily()
+  const { familyId, family, loading, userDoc, updateUserDoc, notice, setNotice } = useFamily()
   const hash = useHash()
   const [tab, setTab] = useState('list')
   const [pendingCatalogItem, setPendingCatalogItem] = useState(null)
@@ -89,6 +90,10 @@ export default function App() {
       {/* Link de convite de outra família aberto por quem já tem uma */}
       {invite && family && family.code !== invite && (
         <SwitchFamilySheet initialCode={invite} onClose={() => setInvite('')} />
+      )}
+      {userDoc?.supportReply && userDoc.supportReply.seen === false && (
+        <SupportReply data={userDoc.supportReply}
+          onClose={() => updateUserDoc({ supportReply: { seen: true } }).catch(() => {})} />
       )}
       {notice && (
         <div className="fixed left-4 right-4 z-[60] bg-gray-800 border border-green-500/40 text-green-200 text-sm rounded-xl px-4 py-3 shadow-xl"

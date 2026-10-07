@@ -22,6 +22,9 @@ const iso = ts => (ms(ts) ? new Date(ms(ts)).toISOString() : null)
 
 export const PLAN_STATUS = ['trial', 'active', 'past_due', 'canceled']
 export const PLAN_INTERVAL = ['monthly', 'annual', 'lifetime', 'none']
+// Tipo do plano: base para liberar/limitar funções quando a cobrança começar
+export const PLAN_TIERS = ['founder', 'basic', 'premium', 'custom']
+export const FEEDBACK_STATUS = ['new', 'doing', 'done']
 
 // Valida o plano digitado no painel. null = remover plano (volta ao acesso livre).
 export function cleanPlan(input) {
@@ -31,6 +34,8 @@ export function cleanPlan(input) {
   if (!name) throw new AdminError(400, 'Dê um nome ao plano')
   if (!PLAN_STATUS.includes(input.status)) throw new AdminError(400, 'Situação inválida')
   if (!PLAN_INTERVAL.includes(input.interval)) throw new AdminError(400, 'Período inválido')
+  const tier = input.tier ?? 'custom'
+  if (!PLAN_TIERS.includes(tier)) throw new AdminError(400, 'Tipo de plano inválido')
   const seats = Number(input.seats)
   if (!Number.isInteger(seats) || seats < 1 || seats > 50) throw new AdminError(400, 'Vagas: de 1 a 50')
   const price = Number(input.price || 0)
@@ -42,7 +47,7 @@ export function cleanPlan(input) {
     validUntil = Timestamp.fromDate(d)
   }
   return {
-    name, status: input.status, interval: input.interval, seats,
+    tier, name, status: input.status, interval: input.interval, seats,
     price: Math.round(price * 100) / 100,
     validUntil,
     notes: String(input.notes || '').trim().slice(0, 500),
@@ -95,10 +100,10 @@ async function familySummary(fs, doc, since30) {
 
 export async function overview({ fs, auth, now = Date.now() }) {
   // Sem collectionGroup: não exige índice extra no Firestore
-  const [familiesSnap, users, feedbackCount] = await Promise.all([
+  const [familiesSnap, users, feedbackSnap] = await Promise.all([
     fs.collection('families').get(),
     listAllUsers(auth),
-    fs.collection('feedback').count().get(),
+    fs.collection('feedback').select('status').get(),
   ])
   const since30 = Timestamp.fromMillis(now - 30 * DAY)
   const families = await Promise.all(familiesSnap.docs.map(d => familySummary(fs, d, since30)))
@@ -107,7 +112,10 @@ export async function overview({ fs, auth, now = Date.now() }) {
   const inFamily = new Set()
   familiesSnap.docs.forEach(d => (d.data().members || []).forEach(uid => inFamily.add(uid)))
   const active = days => families.filter(f => f.lastSeen && now - Date.parse(f.lastSeen) <= days * DAY).length
-  const paying = families.filter(f => f.plan?.status === 'active').length
+  // Pagante = plano ativo com valor (Fundador e Básico gratuitos não contam)
+  const paying = families.filter(f => f.plan?.status === 'active' && f.plan.price > 0).length
+  const byTier = tier => families.filter(f => f.plan?.status === 'active' && f.plan.tier === tier).length
+  const openFeedback = feedbackSnap.docs.filter(d => (d.data().status || 'new') !== 'done').length
 
   return {
     generatedAt: new Date(now).toISOString(),
@@ -128,7 +136,11 @@ export async function overview({ fs, auth, now = Date.now() }) {
         if (f.plan.interval === 'annual') return s + f.plan.price / 12
         return s
       }, 0) * 100) / 100,
-      feedback: feedbackCount.data().count,
+      founders: byTier('founder'),
+      basic: byTier('basic'),
+      premium: byTier('premium'),
+      feedback: feedbackSnap.size,
+      feedbackOpen: openFeedback,
     },
     families,
     // Cadastrou e não criou nem entrou em família: quem precisa de ajuda no começo
@@ -205,6 +217,34 @@ export async function listFeedback({ fs, limit = 100 }) {
   const snap = await fs.collection('feedback').orderBy('createdAt', 'desc').limit(limit).get()
   return snap.docs.map(d => {
     const f = d.data()
-    return { id: d.id, createdAt: iso(f.createdAt), email: f.email || null, familyId: f.familyId || null, type: f.type || null, message: f.message || '' }
+    return {
+      id: d.id, createdAt: iso(f.createdAt), email: f.email || null, familyId: f.familyId || null, type: f.type || null,
+      message: f.message || '', userAgent: f.userAgent || null, reply: f.reply || '',
+      status: f.status || 'new', adminNote: f.adminNote || '', handledAt: iso(f.handledAt), handledBy: f.handledBy || null,
+    }
   })
+}
+
+// Atendimento: novo -> em andamento -> resolvido, com anotação interna (só o admin vê)
+// e resposta ao usuário (aparece no app). onResolved avisa o usuário ao passar para "resolvido".
+export async function setFeedbackStatus({ fs, id, status, note, reply, adminEmail, onResolved }) {
+  if (!id || typeof id !== 'string') throw new AdminError(400, 'Mensagem inválida')
+  if (!FEEDBACK_STATUS.includes(status)) throw new AdminError(400, 'Situação inválida')
+  const ref = fs.doc(`feedback/${id}`)
+  const snap = await ref.get()
+  if (!snap.exists) throw new AdminError(404, 'Mensagem não encontrada')
+  const before = snap.data()
+  const replyText = reply !== undefined ? String(reply || '').trim().slice(0, 500) : before.reply || ''
+  await ref.update({
+    status,
+    ...(note !== undefined ? { adminNote: String(note || '').trim().slice(0, 1000) } : {}),
+    ...(reply !== undefined ? { reply: replyText } : {}),
+    handledAt: FieldValue.serverTimestamp(),
+    handledBy: adminEmail || null,
+  })
+  let notified = null
+  if (status === 'done' && (before.status || 'new') !== 'done' && onResolved) {
+    notified = await onResolved({ feedback: { id, ...before }, reply: replyText })
+  }
+  return { ok: true, notified }
 }
