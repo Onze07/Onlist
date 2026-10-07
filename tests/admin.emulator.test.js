@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { initializeApp, deleteApp } from 'firebase-admin/app'
 import { getFirestore, Timestamp } from 'firebase-admin/firestore'
 import { getAuth } from 'firebase-admin/auth'
-import { overview, familyDetail, setPlan, listFeedback, cleanPlan, isAdminEmail } from '../api/_lib/admin-core.js'
+import { overview, familyDetail, setPlan, listFeedback, setFeedbackStatus, cleanPlan, isAdminEmail } from '../api/_lib/admin-core.js'
 
 let app, fs, auth
 const NOW = Date.parse('2026-10-07T12:00:00Z')
@@ -31,7 +31,9 @@ beforeEach(async () => {
   await fs.doc('families/f1/history/h1').set({ createdAt: daysAgo(2), total: 100, mercado: 'IG', items: [{ name: 'Arroz' }], source: 'nfce' })
   await fs.doc('families/f1/history/h2').set({ createdAt: daysAgo(45), total: 50, mercado: 'IG', items: [] })
   await fs.doc('families/f2').set({ name: 'Bob', code: 'BOB234', createdBy: 'bob', members: ['bob'], admins: [], createdAt: daysAgo(60),
-    plan: { name: 'Premium', status: 'active', interval: 'annual', seats: 4, price: 79.2 } })
+    plan: { tier: 'premium', name: 'Premium', status: 'active', interval: 'annual', seats: 4, price: 79.2 } })
+  await fs.doc('families/f3').set({ name: 'Beta', code: 'BET234', createdBy: 'zé2', members: [], admins: [], createdAt: daysAgo(5),
+    plan: { tier: 'founder', name: 'Fundador', status: 'active', interval: 'lifetime', seats: 20, price: 0 } })
   await fs.doc('families/f2/profiles/bob').set({ name: 'Bob', email: 'bob@x.com', lastSeenAt: daysAgo(50) })
   await fs.doc('feedback/a').set({ email: 'ana@x.com', message: 'Gostei', type: 'ideia', createdAt: daysAgo(1) })
 })
@@ -41,14 +43,17 @@ test('visão geral: usuários, famílias, ativas, compras, pagantes e receita', 
   assert.equal(r.kpis.users, 4)
   assert.equal(r.kpis.usersNoFamily, 1)
   assert.equal(r.usersNoFamily[0].email, 'ze@x.com')
-  assert.equal(r.kpis.families, 2)
+  assert.equal(r.kpis.families, 3)
   assert.equal(r.kpis.familiesWithPurchase, 1)
   assert.equal(r.kpis.familiesBuying30, 1)
   assert.equal(r.kpis.familiesBuying30, 1)
   assert.equal(r.kpis.active7, 1)
   assert.equal(r.kpis.active30, 1)
   assert.equal(r.kpis.purchases30, 1)
-  assert.equal(r.kpis.paying, 1)
+  assert.equal(r.kpis.paying, 1) // Fundador (R$ 0) não conta
+  assert.equal(r.kpis.founders, 1)
+  assert.equal(r.kpis.premium, 1)
+  assert.equal(r.kpis.feedbackOpen, 1)
   assert.equal(r.kpis.mrr, 6.6)
   assert.equal(r.kpis.feedback, 1)
   const f1 = r.families.find(f => f.id === 'f1')
@@ -78,9 +83,17 @@ test('definir e remover plano', async () => {
   assert.equal((await fs.doc('families/f1').get()).data().plan, undefined)
 })
 
-test('feedback do mais novo para o mais antigo', async () => {
-  const f = await listFeedback({ fs })
+test('feedback: lista e atendimento (novo -> resolvido)', async () => {
+  let f = await listFeedback({ fs })
   assert.equal(f[0].message, 'Gostei')
+  assert.equal(f[0].status, 'new')
+  await setFeedbackStatus({ fs, id: 'a', status: 'done', note: 'Respondido no WhatsApp', adminEmail: 'eli@x.com' })
+  f = await listFeedback({ fs })
+  assert.equal(f[0].status, 'done')
+  assert.equal(f[0].adminNote, 'Respondido no WhatsApp')
+  assert.equal(f[0].handledBy, 'eli@x.com')
+  await assert.rejects(setFeedbackStatus({ fs, id: 'a', status: 'x' }), { status: 400 })
+  assert.equal((await overview({ fs, auth, now: NOW })).kpis.feedbackOpen, 0)
 })
 
 test('validação do plano', () => {
@@ -92,6 +105,9 @@ test('validação do plano', () => {
   assert.throws(() => cleanPlan({ ...ok, seats: 2.5 }), { status: 400 })
   assert.throws(() => cleanPlan({ ...ok, name: '' }), { status: 400 })
   assert.throws(() => cleanPlan({ ...ok, validUntil: 'abc' }), { status: 400 })
+  assert.throws(() => cleanPlan({ ...ok, tier: 'gold' }), { status: 400 })
+  assert.equal(cleanPlan({ ...ok, tier: 'founder' }).tier, 'founder')
+  assert.equal(cleanPlan(ok).tier, 'custom')
 })
 
 test('só e-mails da lista de admins entram', () => {

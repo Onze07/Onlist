@@ -22,6 +22,20 @@ const STATUS = {
 }
 const INTERVAL = { monthly: 'Mensal', annual: 'Anual', lifetime: 'Vitalício', none: 'Sem cobrança' }
 
+// Modelos de plano: escolher um preenche os campos (dá para ajustar antes de salvar).
+// As limitações do Básico só passam a valer quando a cobrança for ligada no app.
+const TIERS = {
+  founder: { label: 'Fundador', hint: 'Testadores do início: tudo liberado, sem cobrança', preset: { name: 'Fundador', interval: 'lifetime', price: 0, seats: 20 } },
+  basic: { label: 'Básico', hint: 'Lista e relatório de 60 dias', preset: { name: 'Básico', interval: 'none', price: 0, seats: 4 } },
+  premium: { label: 'Premium', hint: 'Todas as funções', preset: { name: 'Premium', interval: 'monthly', price: 7.9, seats: 4 } },
+  custom: { label: 'Personalizado', hint: 'Valores livres', preset: {} },
+}
+const FEEDBACK = {
+  new: { label: 'Novo', cls: 'bg-blue-500/15 text-blue-300 border-blue-500/30' },
+  doing: { label: 'Em andamento', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
+  done: { label: 'Resolvido', cls: 'bg-green-500/15 text-green-300 border-green-500/30' },
+}
+
 const Spinner = () => <div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
 
 function PlanBadge({ plan }) {
@@ -68,11 +82,12 @@ function Funnel({ steps }) {
 function PlanEditor({ family, onSaved }) {
   const p = family.plan
   const [form, setForm] = useState({
-    name: p?.name || 'Premium',
+    tier: p?.tier || (p ? 'custom' : 'founder'),
+    name: p?.name || 'Fundador',
     status: p?.status || 'active',
-    interval: p?.interval || 'monthly',
-    seats: p?.seats || 4,
-    price: p?.price ?? 7.9,
+    interval: p?.interval || 'lifetime',
+    seats: p?.seats || 20,
+    price: p?.price ?? 0,
     validUntil: p?.validUntil ? p.validUntil.slice(0, 10) : '',
     notes: p?.notes || '',
   })
@@ -93,6 +108,16 @@ function PlanEditor({ family, onSaved }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-4 gap-1.5">
+        {Object.entries(TIERS).map(([id, t]) => (
+          <button key={id} type="button" title={t.hint} aria-pressed={form.tier === id}
+            onClick={() => setForm(f => ({ ...f, ...t.preset, tier: id }))}
+            className={`text-xs py-2 rounded-lg border ${form.tier === id ? 'bg-green-500/15 border-green-500/50 text-green-300' : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <p className="text-gray-500 text-xs -mt-1">{TIERS[form.tier]?.hint}</p>
       <div className="grid grid-cols-2 gap-3">
         <label className="text-gray-500 text-xs">Nome do plano
           <input value={form.name} onChange={e => set('name', e.target.value)} className={field} />
@@ -229,11 +254,88 @@ function SortTh({ id, sort, setSort, children, className = '' }) {
   )
 }
 
+// Atendimento das mensagens do "Enviar feedback": novo -> em andamento -> resolvido
+function SupportItem({ f, onChanged }) {
+  const [note, setNote] = useState(f.adminNote)
+  const [busy, setBusy] = useState(false)
+  const s = FEEDBACK[f.status] || FEEDBACK.new
+
+  async function update(status) {
+    setBusy(true)
+    try {
+      await adminApi('feedbackStatus', { id: f.id, status, note })
+      onChanged()
+    } catch (e) {
+      alert(e.message)
+      setBusy(false)
+    }
+  }
+
+  const subject = encodeURIComponent('Onlist: sobre sua mensagem')
+  const body = encodeURIComponent(`Olá!\n\nSobre sua mensagem: "${f.message.slice(0, 200)}"\n\n`)
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="text-gray-400 truncate select-all">{f.email || 'anônimo'}{f.type ? ` · ${f.type}` : ''}</span>
+        <span className="flex items-center gap-2 flex-shrink-0">
+          <span className="text-gray-500">{fmtDate(f.createdAt)}</span>
+          <span className={`px-2 py-0.5 rounded-full border ${s.cls}`}>{s.label}</span>
+        </span>
+      </div>
+      <p className="text-gray-100 text-sm whitespace-pre-wrap">{f.message}</p>
+      <input value={note} onChange={e => setNote(e.target.value)} placeholder="Anotação interna (o usuário não vê)"
+        className="w-full bg-gray-800 text-white rounded-lg px-3 h-9 text-sm outline-none border border-gray-700 focus:border-green-500" />
+      <div className="flex flex-wrap items-center gap-2">
+        {f.email && (
+          <a href={`mailto:${f.email}?subject=${subject}&body=${body}`}
+            className="text-sm px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800 text-gray-200 hover:bg-gray-700">Responder por e-mail</a>
+        )}
+        <span className="flex-1" />
+        {f.status !== 'doing' && f.status !== 'done' && (
+          <button disabled={busy} onClick={() => update('doing')}
+            className="text-sm px-3 py-1.5 rounded-lg border border-amber-500/30 text-amber-300 hover:bg-amber-500/10 disabled:opacity-50">Em andamento</button>
+        )}
+        {f.status !== 'done' ? (
+          <button disabled={busy} onClick={() => update('done')}
+            className="text-sm px-3 py-1.5 rounded-lg bg-green-500 hover:bg-green-400 text-white font-medium disabled:opacity-50">Marcar resolvido</button>
+        ) : (
+          <button disabled={busy} onClick={() => update('new')}
+            className="text-sm px-3 py-1.5 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 disabled:opacity-50">Reabrir</button>
+        )}
+      </div>
+      {f.handledBy && <p className="text-gray-600 text-[11px]">Última ação em {fmtDate(f.handledAt)} por {f.handledBy}</p>}
+    </div>
+  )
+}
+
+function SupportList({ feedback, onChanged }) {
+  const [filter, setFilter] = useState('open')
+  if (!feedback) return <div className="py-24 flex justify-center"><Spinner /></div>
+  const list = feedback.filter(f => (filter === 'open' ? f.status !== 'done' : filter === 'done' ? f.status === 'done' : true))
+  const open = feedback.filter(f => f.status !== 'done').length
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex gap-1.5">
+        {[['open', `Em aberto (${open})`], ['done', 'Resolvidos'], ['all', 'Todos']].map(([id, label]) => (
+          <button key={id} onClick={() => setFilter(id)} aria-pressed={filter === id}
+            className={`text-sm px-3 py-1.5 rounded-lg border ${filter === id ? 'bg-green-500/15 border-green-500/40 text-green-300' : 'bg-gray-900 border-gray-800 text-gray-400 hover:text-white'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {list.length === 0 && <p className="text-gray-500 text-sm">{filter === 'open' ? 'Nada em aberto. 🎉' : 'Nenhuma mensagem.'}</p>}
+      <div className="grid lg:grid-cols-2 gap-3">
+        {list.map(f => <SupportItem key={`${f.id}-${f.status}`} f={f} onChanged={onChanged} />)}
+      </div>
+    </div>
+  )
+}
+
 const NAV = [
   { id: 'overview', label: 'Visão geral', icon: '◧' },
   { id: 'families', label: 'Famílias', icon: '⌂' },
   { id: 'nofamily', label: 'Sem família', icon: '◌' },
-  { id: 'feedback', label: 'Feedback', icon: '✉' },
+  { id: 'feedback', label: 'Suporte', icon: '✉' },
 ]
 
 export default function AdminPanel({ user, onSignOut }) {
@@ -274,7 +376,7 @@ export default function AdminPanel({ user, onSignOut }) {
   }, [data, search, sort])
 
   const k = data?.kpis
-  const counts = { families: k?.families, nofamily: k?.usersNoFamily, feedback: k?.feedback }
+  const counts = { families: k?.families, nofamily: k?.usersNoFamily, feedback: k?.feedbackOpen ?? k?.feedback }
   const title = NAV.find(n => n.id === tab)?.label
 
   return (
@@ -330,9 +432,9 @@ export default function AdminPanel({ user, onSignOut }) {
               <Tile label="Famílias" value={k.families} hint={`${k.familiesWithPurchase} já fizeram compra`} />
               <Tile label="Famílias ativas (7 dias)" value={k.active7} hint={`${k.active30} nos últimos 30 dias`} />
               <Tile label="Compras (30 dias)" value={k.purchases30} />
-              <Tile label="Pagantes" value={k.paying} />
+              <Tile label="Pagantes" value={k.paying} hint={`${k.founders ?? 0} fundadores · ${k.premium ?? 0} premium · ${k.basic ?? 0} básico`} />
               <Tile label="Receita mensal" value={fmtMoney(k.mrr)} hint="planos ativos · anual ÷ 12" />
-              <Tile label="Feedback recebido" value={k.feedback} />
+              <Tile label="Suporte em aberto" value={k.feedbackOpen ?? k.feedback} hint={`${k.feedback} mensagens no total`} />
             </div>
             <div className="grid lg:grid-cols-[3fr_2fr] gap-3">
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
@@ -429,21 +531,7 @@ export default function AdminPanel({ user, onSignOut }) {
           </div>
         )}
 
-        {tab === 'feedback' && (
-          <div className="grid lg:grid-cols-2 gap-3">
-            {!feedback && <div className="py-24 flex justify-center lg:col-span-2"><Spinner /></div>}
-            {feedback?.length === 0 && <p className="text-gray-500 text-sm">Nenhum feedback ainda.</p>}
-            {feedback?.map(f => (
-              <div key={f.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
-                <div className="flex justify-between text-xs text-gray-500 gap-2">
-                  <span className="truncate select-all">{f.email || 'anônimo'}{f.type ? ` · ${f.type}` : ''}</span>
-                  <span className="flex-shrink-0">{fmtDate(f.createdAt)}</span>
-                </div>
-                <p className="text-gray-200 text-sm mt-2 whitespace-pre-wrap">{f.message}</p>
-              </div>
-            ))}
-          </div>
-        )}
+        {tab === 'feedback' && <SupportList feedback={feedback} onChanged={() => { setFeedback(null); load() }} />}
       </main>
 
       {open && <FamilyDrawer familyId={open} onClose={() => setOpen(null)} onChanged={load} />}
