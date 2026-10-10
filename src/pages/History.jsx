@@ -7,6 +7,7 @@ import { historyCsv, downloadFile } from '../lib/csv'
 import { localDate } from '../lib/firestore'
 import { useAuth } from '../context/AuthContext'
 import NfceReader from '../components/NfceReader'
+import { listPendingNotes } from '../lib/pendingNotes'
 
 function fmt(n) {
   return (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -41,6 +42,14 @@ export default function History() {
   const [loadedSize, setLoadedSize] = useState(0)
   const [exporting, setExporting] = useState(false)
   const sentinelRef = useRef(null)
+  // Notas guardadas para ler depois (SEFAZ ainda sem os itens)
+  const [pendingNotes, setPendingNotes] = useState(() => listPendingNotes(familyId).length)
+  useEffect(() => {
+    const fn = () => setPendingNotes(listPendingNotes(familyId).length)
+    fn()
+    window.addEventListener('onlist:pending-notes', fn)
+    return () => window.removeEventListener('onlist:pending-notes', fn)
+  }, [familyId])
   const hasMore = records.length >= pageSize
   const loadingMore = loadedSize < pageSize
 
@@ -113,6 +122,13 @@ export default function History() {
           </div>
         </div>
       </div>
+      {pendingNotes > 0 && (
+        <button onClick={() => setShowNfce(true)}
+          className="mx-4 mt-3 flex items-center justify-between gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-200 text-sm rounded-xl px-3 py-2.5 text-left">
+          <span>🧾 {pendingNotes === 1 ? '1 nota guardada' : `${pendingNotes} notas guardadas`} para ler depois</span>
+          <span className="font-medium text-amber-100 flex-shrink-0">Ler agora →</span>
+        </button>
+      )}
       {(showNfce || reconcile) && (
         <NfceReader familyId={familyId} user={user} listName="Nota fiscal" reconcileWith={reconcile}
           onClose={() => { setShowNfce(false); setReconcile(null) }}

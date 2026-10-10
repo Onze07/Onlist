@@ -10,6 +10,12 @@ export async function apiPost(path, payload) {
     body: JSON.stringify(payload),
   })
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'Erro de conexão')
+  if (!res.ok) {
+    // Mantém o corpo da resposta (ex.: reason/retryLater da leitura da nota)
+    const err = new Error(data.error || 'Erro de conexão')
+    err.status = res.status
+    err.data = data
+    throw err
+  }
   return data
 }

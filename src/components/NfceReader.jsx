@@ -5,6 +5,7 @@ import { apiPost } from '../lib/api'
 import { commitInChunks, priceHistoryWrite, queueWrite } from '../lib/firestore'
 import { convertForUnit, findSimilarPurchases, mapUnit, marketName, packSize, suggestTarget, UNITS, UNIT_LABELS } from '../lib/nfceMatch'
 import QrScanner from './QrScanner'
+import { addPendingNote, isContingencyKey, keyFromUrl, listPendingNotes, removePendingNote } from '../lib/pendingNotes'
 
 const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
 
@@ -36,6 +37,20 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
   const [mercado, setMercado] = useState('')
   const [mappings, setMappings] = useState({})
   const [lastUrl, setLastUrl] = useState('')
+  // Nota que a SEFAZ ainda não mostra (ex.: contingência): oferecer "ler depois"
+  const [retry, setRetry] = useState(null)
+  const [pending, setPending] = useState(() => listPendingNotes(familyId))
+
+  useEffect(() => {
+    const fn = () => setPending(listPendingNotes(familyId))
+    window.addEventListener('onlist:pending-notes', fn)
+    return () => window.removeEventListener('onlist:pending-notes', fn)
+  }, [familyId])
+
+  function handleReadError(e, url) {
+    setError(e.message)
+    setRetry(e.data?.retryLater ? { url, key: e.data.key || keyFromUrl(url), contingency: !!e.data.contingency } : null)
+  }
 
   const catalogItems = useMemo(() => Object.entries(catalog)
     .map(([id, d]) => ({ id, ...d }))
@@ -61,6 +76,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
 
   const start = useCallback(async (url) => {
     setError('')
+    setRetry(null)
     setLastUrl(url)
     setStep('loading')
     try {
@@ -69,7 +85,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
       setCaptcha(r.captcha); setSession(r.session); setAnswer('')
       setStep('captcha')
     } catch (e) {
-      setError(e.message)
+      handleReadError(e, url)
       setStep('scan')
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -86,8 +102,9 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
       setError(r.error || 'Tente de novo')
       setStep('captcha')
     } catch (e) {
-      setError(e.message)
-      setStep('captcha')
+      handleReadError(e, lastUrl)
+      // Sem itens na SEFAZ: volta para o início, onde dá para guardar a nota
+      setStep(e.data?.retryLater || e.status === 422 ? 'scan' : 'captcha')
     }
   }
 
@@ -107,6 +124,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
   }
 
   async function showReview(n) {
+    removePendingNote(familyId, n.key || lastUrl)
     const found = await checkExisting(n)
     if (found.duplicate) {
       setDuplicate(found.duplicate)
@@ -216,10 +234,38 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {error && <p className="text-red-300 text-sm bg-red-500/10 rounded-xl px-3 py-2 mb-3">{error}</p>}
+        {error && !retry && <p className="text-red-300 text-sm bg-red-500/10 rounded-xl px-3 py-2 mb-3">{error}</p>}
+        {error && retry && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-3 mb-3">
+            <p className="text-amber-200 text-sm font-medium mb-1">{retry.contingency ? '⏳ Nota em contingência' : '⏳ Nota ainda não disponível'}</p>
+            <p className="text-amber-100/80 text-sm">{error}</p>
+            <div className="flex gap-2 mt-3">
+              <button onClick={() => { addPendingNote(familyId, retry); setRetry(null); setError('') }}
+                className="flex-1 bg-amber-500 text-gray-900 font-semibold text-sm py-2.5 rounded-lg">Guardar para ler depois</button>
+              <button onClick={() => start(retry.url)}
+                className="px-4 bg-gray-800 border border-gray-700 text-gray-200 text-sm py-2.5 rounded-lg">Tentar agora</button>
+            </div>
+          </div>
+        )}
 
         {step === 'scan' && (
           <div className="flex flex-col gap-4">
+            {pending.length > 0 && (
+              <div className="bg-gray-800/60 border border-gray-700 rounded-xl">
+                <p className="text-gray-400 text-xs px-3 pt-2.5 pb-1">Notas guardadas para ler depois</p>
+                {pending.map(n => (
+                  <div key={n.key || n.url} className="flex items-center gap-2 px-3 py-2 border-t border-gray-700/60">
+                    <span className="flex-1 min-w-0 text-sm text-gray-200 truncate">
+                      Nº {n.key ? Number(n.key.slice(25, 34)) : '—'}
+                      <span className="text-gray-500 text-xs"> · guardada {new Date(n.savedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}{n.contingency ? ' · contingência' : ''}</span>
+                    </span>
+                    <button onClick={() => start(n.url)} className="text-sm font-medium text-green-300 border border-green-500/40 bg-green-500/10 px-3 py-1 rounded-full">Ler</button>
+                    <button onClick={() => confirm('Remover esta nota da lista?') && removePendingNote(familyId, n.key || n.url)}
+                      className="text-gray-500 text-sm px-1" aria-label="Remover nota guardada">✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
             <QrScanner onResult={start} />
             <div>
               <p className="text-gray-500 text-xs mb-1.5">Ou cole o link do QR code</p>
@@ -242,6 +288,11 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
 
         {step === 'captcha' && (
           <div className="flex flex-col items-center gap-4 pt-4">
+            {isContingencyKey(keyFromUrl(lastUrl)) && (
+              <p className="text-amber-200/90 text-xs text-center bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2 max-w-xs">
+                Esta nota foi emitida em contingência (caixa sem internet). Se a SEFAZ ainda não tiver os itens, dá para guardar e ler mais tarde.
+              </p>
+            )}
             <p className="text-gray-300 text-sm text-center">A SEFAZ pede uma verificação. Digite o texto da imagem:</p>
             {captcha && <img src={captcha} alt="Captcha da SEFAZ" className="bg-white rounded-xl p-2 w-64" />}
             <input autoFocus value={answer} onChange={e => setAnswer(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitCaptcha()}

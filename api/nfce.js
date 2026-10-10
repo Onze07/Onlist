@@ -4,7 +4,7 @@
 // O usuário digita o captcha no app; nada é resolvido automaticamente.
 import { initializeApp, cert, getApps } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
-import { parseNfce, isCaptchaPage, extractCaptcha, validNfceUrl } from './_lib/nfce-parse.js'
+import { parseNfce, isCaptchaPage, extractCaptcha, validNfceUrl, keyInfo, classifyPage, notFoundMessage } from './_lib/nfce-parse.js'
 
 const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
 
@@ -78,6 +78,15 @@ function logLayout(html) {
   console.log('nfce-layout', body.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/\s+/g, ' ').slice(0, 6000))
 }
 
+// Página sem itens: explica o motivo (ex.: nota em contingência ainda não enviada) e diz se vale tentar depois
+function noItems(res, html, key) {
+  const reason = classifyPage(html)
+  if (!reason) logLayout(html)
+  const info = keyInfo(key)
+  const msg = notFoundMessage(reason, info)
+  return res.status(422).json({ ...msg, reason: reason || 'unknown', contingency: !!info?.contingency, key: key || null })
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST' })
   if (!process.env.FIREBASE_SERVICE_ACCOUNT) return res.status(500).json({ error: 'Servidor não configurado' })
@@ -97,12 +106,11 @@ export default async function handler(req, res) {
       if (!isCaptchaPage(page.html)) {
         const nota = parseNfce(page.html)
         if (nota.items.length) return res.status(200).json({ nota: { ...nota, key: nota.key || valid.key } })
-        logLayout(page.html)
-        return res.status(422).json({ error: 'Não foi possível ler esta nota.' })
+        return noItems(res, page.html, valid.key)
       }
       const out = captchaResponse(page, page.jar, valid.url)
       if (!out) { logLayout(page.html); return res.status(422).json({ error: 'Formato da página da SEFAZ mudou.' }) }
-      return res.status(200).json({ ...out, key: valid.key })
+      return res.status(200).json({ ...out, key: valid.key, contingency: !!keyInfo(valid.key)?.contingency })
     }
 
     if (body.action === 'submit') {
@@ -116,11 +124,9 @@ export default async function handler(req, res) {
         return res.status(200).json({ ...(out || {}), error: 'Texto incorreto. Tente de novo.' })
       }
       const nota = parseNfce(page.html)
-      if (!nota.items.length) {
-        logLayout(page.html)
-        return res.status(422).json({ error: 'Não foi possível ler os itens desta nota.' })
-      }
-      const key = nota.key || (validNfceUrl(s.url) || {}).key || null
+      const urlKey = (validNfceUrl(s.url) || {}).key || null
+      if (!nota.items.length) return noItems(res, page.html, nota.key || urlKey)
+      const key = nota.key || urlKey
       return res.status(200).json({ nota: { ...nota, key } })
     }
 
