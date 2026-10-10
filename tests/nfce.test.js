@@ -141,6 +141,10 @@ test('página sem itens: classifica o motivo e sugere tentar depois', () => {
   assert.equal(classifyPage('<b>NFC-e CANCELADA</b>'), 'canceled')
   assert.equal(classifyPage('<p>Chave de acesso inválida</p>'), 'invalid')
   assert.equal(classifyPage('<p>Outra coisa</p>'), null)
+  // Textos reais da SEFAZ-RO
+  assert.equal(classifyPage('<td colspan="2"> Documento Fiscal (NFC-e) Inexistente na Base de Dados da Sefaz. </td>'), 'not_found')
+  assert.equal(classifyPage('<p>O sistema detectou um comportamento anormal, e por isso a consulta não foi efetuada. Por Favor, tente mais tarde!</p><p>Cod: CSRF_ERROR_01</p>'), 'blocked')
+  assert.match(notFoundMessage('blocked', {}).error, /alguns minutos/)
   assert.equal(notFoundMessage('not_found', { contingency: true }).retryLater, true)
   assert.match(notFoundMessage('not_found', { contingency: true }).error, /contingência/)
   assert.equal(notFoundMessage(null, { contingency: false }).retryLater, true)

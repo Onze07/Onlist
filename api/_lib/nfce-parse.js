@@ -119,6 +119,8 @@ export function keyInfo(key) {
 // Página da SEFAZ sem itens: nota ainda não registrada, cancelada ou chave inválida?
 export function classifyPage(html) {
   const t = text(html).toLowerCase()
+  // Proteção da SEFAZ-RO após tentativas seguidas: "comportamento anormal ... CSRF_ERROR"
+  if (/comportamento anormal|csrf_error/.test(t)) return 'blocked'
   if (/cancelad[ao]/.test(t) && /(nfc-?e|nota)/.test(t)) return 'canceled'
   if (/denegad[ao]/.test(t)) return 'denied'
   if (/n[ãa]o\s+(foi\s+)?(encontrad|localizad)|inexistente|n[ãa]o\s+consta|n[ãa]o\s+autorizad|em\s+processamento|aguardando|ainda\s+n[ãa]o/.test(t)) return 'not_found'
@@ -130,6 +132,9 @@ export function classifyPage(html) {
 export function notFoundMessage(reason, info) {
   if (reason === 'canceled') return { error: 'Esta nota consta como cancelada na SEFAZ.', retryLater: false }
   if (reason === 'denied') return { error: 'Esta nota foi recusada (denegada) pela SEFAZ.', retryLater: false }
+  if (reason === 'blocked') {
+    return { error: 'A SEFAZ pausou as consultas por segurança depois de várias tentativas seguidas. Aguarde alguns minutos e tente de novo.', retryLater: true }
+  }
   if (reason === 'invalid') return { error: 'A SEFAZ não reconheceu este QR code. Confira se é o QR da nota fiscal.', retryLater: false }
   if (info?.contingency) {
     return {

@@ -49,7 +49,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
 
   function handleReadError(e, url) {
     setError(e.message)
-    setRetry(e.data?.retryLater ? { url, key: e.data.key || keyFromUrl(url), contingency: !!e.data.contingency } : null)
+    setRetry(e.data?.retryLater ? { url, key: e.data.key || keyFromUrl(url), contingency: !!e.data.contingency, reason: e.data.reason } : null)
   }
 
   const catalogItems = useMemo(() => Object.entries(catalog)
@@ -237,10 +237,10 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
         {error && !retry && <p className="text-red-300 text-sm bg-red-500/10 rounded-xl px-3 py-2 mb-3">{error}</p>}
         {error && retry && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-3 mb-3">
-            <p className="text-amber-200 text-sm font-medium mb-1">{retry.contingency ? '⏳ Nota em contingência' : '⏳ Nota ainda não disponível'}</p>
+            <p className="text-amber-200 text-sm font-medium mb-1">{retry.reason === 'blocked' ? '⏳ SEFAZ pausou as consultas' : retry.contingency ? '⏳ Nota em contingência' : '⏳ Nota ainda não disponível'}</p>
             <p className="text-amber-100/80 text-sm">{error}</p>
             <div className="flex gap-2 mt-3">
-              <button onClick={() => { addPendingNote(familyId, retry); setRetry(null); setError('') }}
+              <button onClick={() => { addPendingNote(familyId, { url: retry.url, key: retry.key, contingency: retry.contingency }); setRetry(null); setError('') }}
                 className="flex-1 bg-amber-500 text-gray-900 font-semibold text-sm py-2.5 rounded-lg">Guardar para ler depois</button>
               <button onClick={() => start(retry.url)}
                 className="px-4 bg-gray-800 border border-gray-700 text-gray-200 text-sm py-2.5 rounded-lg">Tentar agora</button>
