@@ -97,3 +97,53 @@ export function validNfceUrl(raw) {
   if (!key) return null
   return { url: url.toString(), key, uf: key.slice(0, 2) }
 }
+
+// Partes da chave de acesso (44 dígitos): UF, ano/mês, CNPJ, modelo, série, número e tipo de emissão.
+// tpEmis 9 = contingência off-line da NFC-e: emitida sem internet; o mercado envia à SEFAZ depois.
+export function keyInfo(key) {
+  const k = String(key || '')
+  if (!/^\d{44}$/.test(k)) return null
+  const tpEmis = k[34]
+  return {
+    uf: k.slice(0, 2),
+    yearMonth: `20${k.slice(2, 4)}-${k.slice(4, 6)}`,
+    cnpj: k.slice(6, 20),
+    model: k.slice(20, 22),
+    serie: Number(k.slice(22, 25)),
+    number: Number(k.slice(25, 34)),
+    tpEmis,
+    contingency: tpEmis === '9',
+  }
+}
+
+// Página da SEFAZ sem itens: nota ainda não registrada, cancelada ou chave inválida?
+export function classifyPage(html) {
+  const t = text(html).toLowerCase()
+  // Proteção da SEFAZ-RO após tentativas seguidas: "comportamento anormal ... CSRF_ERROR"
+  if (/comportamento anormal|csrf_error/.test(t)) return 'blocked'
+  if (/cancelad[ao]/.test(t) && /(nfc-?e|nota)/.test(t)) return 'canceled'
+  if (/denegad[ao]/.test(t)) return 'denied'
+  if (/n[ãa]o\s+(foi\s+)?(encontrad|localizad)|inexistente|n[ãa]o\s+consta|n[ãa]o\s+autorizad|em\s+processamento|aguardando|ainda\s+n[ãa]o/.test(t)) return 'not_found'
+  if (/chave\s+(de\s+acesso\s+)?inv[áa]lida|par[âa]metro.*inv[áa]lid/.test(t)) return 'invalid'
+  return null
+}
+
+// Mensagem para o usuário quando a nota não traz itens
+export function notFoundMessage(reason, info) {
+  if (reason === 'canceled') return { error: 'Esta nota consta como cancelada na SEFAZ.', retryLater: false }
+  if (reason === 'denied') return { error: 'Esta nota foi recusada (denegada) pela SEFAZ.', retryLater: false }
+  if (reason === 'blocked') {
+    return { error: 'A SEFAZ pausou as consultas por segurança depois de várias tentativas seguidas. Aguarde alguns minutos e tente de novo.', retryLater: true }
+  }
+  if (reason === 'invalid') return { error: 'A SEFAZ não reconheceu este QR code. Confira se é o QR da nota fiscal.', retryLater: false }
+  if (info?.contingency) {
+    return {
+      error: 'Esta nota foi emitida em contingência (o caixa estava sem internet). O mercado ainda precisa enviá-la à SEFAZ, o que costuma levar algumas horas. Guarde e tente mais tarde.',
+      retryLater: true,
+    }
+  }
+  return {
+    error: 'A SEFAZ ainda não mostra os itens desta nota. Notas recentes podem levar um tempo para aparecer. Guarde e tente mais tarde.',
+    retryLater: true,
+  }
+}

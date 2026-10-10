@@ -121,3 +121,32 @@ test('itens em comum em outro dia e outro mercado não sugerem', () => {
   const r = findSimilarPurchases(nfNota, [{ id: 'atac', createdAt: new Date('2026-10-02T10:00:00-04:00'), mercado: 'Atacadão', total: 158.9, items: [{ name: 'Banana' }] }])
   assert.equal(r.length, 0)
 })
+
+// --- Nota ainda não disponível / contingência ---
+import { keyInfo, classifyPage, notFoundMessage } from '../api/_lib/nfce-parse.js'
+
+test('chave de acesso: identifica contingência pelo tipo de emissão (35º dígito)', () => {
+  const normal = '11261004082624003767650140002515281350930174'
+  const conting = normal.slice(0, 34) + '9' + normal.slice(35)
+  assert.equal(keyInfo(normal).contingency, false)
+  assert.equal(keyInfo(normal).number, 251528)
+  assert.equal(keyInfo(normal).cnpj, '04082624003767')
+  assert.equal(keyInfo(conting).contingency, true)
+  assert.equal(keyInfo('123'), null)
+})
+
+test('página sem itens: classifica o motivo e sugere tentar depois', () => {
+  assert.equal(classifyPage('<p>NFC-e não encontrada na base de dados</p>'), 'not_found')
+  assert.equal(classifyPage('<div>Nota fiscal ainda não autorizada</div>'), 'not_found')
+  assert.equal(classifyPage('<b>NFC-e CANCELADA</b>'), 'canceled')
+  assert.equal(classifyPage('<p>Chave de acesso inválida</p>'), 'invalid')
+  assert.equal(classifyPage('<p>Outra coisa</p>'), null)
+  // Textos reais da SEFAZ-RO
+  assert.equal(classifyPage('<td colspan="2"> Documento Fiscal (NFC-e) Inexistente na Base de Dados da Sefaz. </td>'), 'not_found')
+  assert.equal(classifyPage('<p>O sistema detectou um comportamento anormal, e por isso a consulta não foi efetuada. Por Favor, tente mais tarde!</p><p>Cod: CSRF_ERROR_01</p>'), 'blocked')
+  assert.match(notFoundMessage('blocked', {}).error, /alguns minutos/)
+  assert.equal(notFoundMessage('not_found', { contingency: true }).retryLater, true)
+  assert.match(notFoundMessage('not_found', { contingency: true }).error, /contingência/)
+  assert.equal(notFoundMessage(null, { contingency: false }).retryLater, true)
+  assert.equal(notFoundMessage('canceled', {}).retryLater, false)
+})
