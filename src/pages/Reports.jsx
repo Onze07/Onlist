@@ -149,6 +149,13 @@ export default function Reports() {
       byCategory[cat].total += item.totalPrice || 0
       byCategory[cat].count++
     }
+    // Itens da nota sem acompanhar preço: aparecem juntos, para as categorias somarem o gasto
+    for (const item of r.otherItems || []) {
+      const cat = 'Outros (sem acompanhar)'
+      if (!byCategory[cat]) byCategory[cat] = { key: cat, label: cat, total: 0, count: 0 }
+      byCategory[cat].total += item.totalPrice || 0
+      byCategory[cat].count++
+    }
   }
   const catData = Object.values(byCategory).sort((a, b) => b.total - a.total)
     .map(c => ({ ...c, note: `${c.count} ${c.count === 1 ? 'item' : 'itens'}` }))

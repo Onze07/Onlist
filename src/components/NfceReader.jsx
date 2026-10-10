@@ -173,6 +173,10 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
       const key = nota.key
       const original = reconcileId ? (reconcileWith?.id === reconcileId ? reconcileWith : similar.find(c => c.record.id === reconcileId)?.record) : null
       const chosen = rows.filter(r => r.include).map(r => ({ r, x: resolved(r) }))
+      // Desmarcado = comprado, mas sem acompanhar preço: fica no registro para a soma bater com o total pago
+      const otherItems = rows.filter(r => !r.include).map(r => ({
+        name: r.nf.name, qty: r.nf.qty, unit: r.nf.unit.toLowerCase(), totalPrice: r.nf.total,
+      }))
       const date = nota.issuedAt ? nota.issuedAt.slice(0, 10) : new Date().toISOString().slice(0, 10)
       const mercadoName = mercado.trim() || 'Não informado'
       const historyRef = key ? doc(db, 'families', familyId, 'history', key) : doc(collection(db, 'families', familyId, 'history'))
@@ -195,6 +199,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
           items: chosen.map(({ r, x }) => ({
             name: x.name, qty: x.qty, unit: x.unit, totalPrice: r.nf.total, pricePerUnit: x.unitPrice, category: x.category,
           })),
+          ...(otherItems.length ? { otherItems } : {}),
         }),
       )
       if (mercado.trim()) {
@@ -352,7 +357,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
               </div>
             </div>
 
-            <p className="text-gray-500 text-xs mb-2">Confira onde cada item entra. Mesclar mantém um produto só (ex.: todas as marcas de arroz em "Arroz").</p>
+            <p className="text-gray-500 text-xs mb-2">Confira onde cada item entra. Mesclar mantém um produto só (ex.: todas as marcas de arroz em "Arroz"). Desmarque o que não quer acompanhar o preço: continua contando no total da compra.</p>
 
             {rows.map((r, i) => {
               const x = resolved(r)
@@ -365,10 +370,11 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
                     <div className="flex-1 min-w-0">
                       <p className="text-gray-400 text-xs truncate">{r.nf.name}</p>
                       <p className="text-gray-500 text-xs">{qtyText(r.nf.qty)} {r.nf.unit.toLowerCase()} × {fmt(r.nf.unitPrice)} = <span className="text-gray-300">{fmt(r.nf.total)}</span></p>
+                      {!r.include && <p className="text-amber-300/90 text-[11px] mt-0.5">Sem acompanhar preço · conta só no total</p>}
                     </div>
                   </div>
 
-                  <div className="mt-2 pl-6">
+                  {r.include && <div className="mt-2 pl-6">
                     <select value={r.target.type === 'existing' ? r.target.id : '__new__'}
                       onChange={e => {
                         const v = e.target.value
@@ -412,7 +418,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
                       {x.converted && <span className="text-emerald-300">{qtyText(x.qty)} {x.unit} · {fmt(x.unitPrice)}/{x.unit}</span>}
                       {inList && <span className="text-green-400">✓ estava na lista</span>}
                     </div>
-                  </div>
+                  </div>}
                 </div>
               )
             })}
@@ -422,9 +428,14 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
 
       {step === 'review' && (
         <div className="border-t border-gray-800 px-4 pt-3" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
-          <button onClick={save} disabled={!rows.some(r => r.include)}
+          {rows.some(r => !r.include) && (
+            <p className="text-gray-500 text-xs text-center mb-2">
+              {rows.filter(r => r.include).length} com preço acompanhado ({fmt(includedTotal)}) · {rows.filter(r => !r.include).length} só no total
+            </p>
+          )}
+          <button onClick={save} disabled={rows.length === 0}
             className="w-full bg-green-500 disabled:opacity-40 text-white font-bold py-3.5 rounded-2xl">
-            {reconcileId ? 'Conciliar compra' : 'Registrar compra'} · {fmt(includedTotal)}
+            {reconcileId ? 'Conciliar compra' : 'Registrar compra'} · {fmt(nota.total)}
           </button>
         </div>
       )}

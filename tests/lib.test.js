@@ -144,3 +144,17 @@ test('calculadora: medidas diferentes não elegem vencedor; linha vazia é ignor
   assert.equal(r2.rows[0].best, false) // só uma opção preenchida
   assert.equal(r2.rows[1].per, null)
 })
+
+// --- Itens da nota sem acompanhar preço ---
+import { historyCsv } from '../src/lib/csv.js'
+
+test('planilha: itens sem acompanhar preço entram para somar o total pago', () => {
+  const csv = historyCsv([{
+    createdAt: { toDate: () => new Date(2026, 9, 10) }, mercado: 'Tradição', listName: 'Nota fiscal', total: 43.94,
+    items: [{ name: 'Panettone', qty: 1, unit: 'un', pricePerUnit: 15.99, totalPrice: 15.99, category: 'Padaria' }],
+    otherItems: [{ name: 'GRANULADO CAMPILA', qty: 2, unit: 'un', totalPrice: 13.98 }],
+  }])
+  const lines = csv.replace('﻿', '').split('\r\n')
+  assert.equal(lines.length, 3)
+  assert.ok(lines[2].includes('GRANULADO CAMPILA;Sem acompanhamento;2;un;6,99;13,98'))
+})

@@ -30,6 +30,12 @@ export function historyCsv(records) {
       rows.push([date, r.mercado, r.listName || '', item.name, item.category || '', item.qty, item.unit,
         Number(item.pricePerUnit) || 0, Number(item.totalPrice) || 0])
     }
+    // Comprados sem acompanhar preço: entram para a planilha somar o total pago
+    for (const item of r.otherItems || []) {
+      const qty = Number(item.qty) || 1
+      rows.push([date, r.mercado, r.listName || '', item.name, 'Sem acompanhamento', qty, item.unit || '',
+        Math.round(((Number(item.totalPrice) || 0) / qty) * 100) / 100, Number(item.totalPrice) || 0])
+    }
   }
   return toCsv(['Data', 'Mercado', 'Lista', 'Item', 'Categoria', 'Quantidade', 'Unidade', 'Preço unitário', 'Total'], rows)
 }
