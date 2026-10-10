@@ -31,6 +31,42 @@ function dayLabel(ts) {
 // Carrega aos poucos: abrir a tela não lê o histórico inteiro
 const PAGE = 30
 
+// Itens comprados sem acompanhar preço (desmarcados na nota) ou, em registros antigos,
+// a diferença entre o total pago e os itens listados: assim a lista sempre fecha com o total
+function OtherItems({ record }) {
+  const [open, setOpen] = useState(false)
+  const others = record.otherItems || []
+  const listed = (record.items || []).reduce((s, i) => s + (Number(i.totalPrice) || 0), 0)
+  const othersSum = others.reduce((s, i) => s + (Number(i.totalPrice) || 0), 0)
+  const rest = Math.round(((record.total || 0) - listed - othersSum) * 100) / 100
+  if (others.length === 0 && rest < 0.01) return null
+  return (
+    <div className="border-t border-gray-800/60">
+      {others.length > 0 && (
+        <button onClick={() => setOpen(v => !v)} className="w-full flex items-center justify-between px-4 py-2 text-left">
+          <span className="text-gray-400 text-sm">
+            Outros {others.length} {others.length === 1 ? 'item' : 'itens'}
+            <span className="text-gray-600 text-xs ml-2">sem acompanhar preço {open ? '▴' : '▾'}</span>
+          </span>
+          <span className="text-gray-400 text-sm">{fmt(othersSum)}</span>
+        </button>
+      )}
+      {open && others.map((item, idx) => (
+        <div key={idx} className="flex items-center justify-between pl-8 pr-4 py-1.5">
+          <span className="text-gray-500 text-xs truncate">{item.name} <span className="text-gray-600">{item.qty} {item.unit}</span></span>
+          <span className="text-gray-500 text-xs flex-shrink-0 ml-2">{fmt(item.totalPrice)}</span>
+        </div>
+      ))}
+      {rest >= 0.01 && (
+        <div className="flex items-center justify-between px-4 py-2">
+          <span className="text-gray-500 text-sm">Outros itens <span className="text-gray-600 text-xs">não detalhados</span></span>
+          <span className="text-gray-500 text-sm">{fmt(rest)}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function History() {
   const { familyId } = useFamily()
   const user = useAuth()
@@ -165,7 +201,7 @@ export default function History() {
                         {record.mercado}
                         {record.source === 'nfce' && <span className="text-[10px] text-green-300 bg-green-500/10 px-1.5 py-0.5 rounded">📄 nota</span>}
                       </div>
-                      <div className="text-gray-500 text-xs">{record.listName || 'Lista'} · {record.items?.length || 0} itens</div>
+                      <div className="text-gray-500 text-xs">{record.listName || 'Lista'} · {(record.items?.length || 0) + (record.otherItems?.length || 0)} itens</div>
                     </button>
 
                     <span className="text-gray-300 text-sm font-medium">{fmt(record.total)}</span>
@@ -195,6 +231,7 @@ export default function History() {
                           <span className="text-gray-400 text-sm">{fmt(item.totalPrice)}</span>
                         </div>
                       ))}
+                      <OtherItems record={record} />
                     </div>
                   )}
                 </div>
