@@ -64,13 +64,16 @@ export function parseNfce(html) {
   const cnpj = cnpjMatch ? cnpjMatch[1].replace(/\D/g, '') : ''
 
   const plain = text(html)
-  const emission = plain.match(/Emiss[ãa]o:?\s*(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2}(?::\d{2})?)/i)
+  // "Emissão: 03/10/2026 11:38:07", "Data de Emissão 03/10/26 às 11:38", "Emissão 10/10/26 18:06:00"
+  const emission = plain.match(/Emiss[ãa]o:?\s*(?:em:?\s*)?(\d{2}\/\d{2}\/\d{2,4})\s*(?:[àa]s\s*|-\s*)?(\d{2}:\d{2}(?::\d{2})?)?/i)
   const keyMatch = plain.match(/((?:\d{4}\s?){10}\d{4})/)
   const key = keyMatch ? keyMatch[1].replace(/\s/g, '') : null
   let issuedAt = null
   if (emission) {
-    const [d, m, y] = emission[1].split('/')
-    issuedAt = `${y}-${m}-${d}T${emission[2].length === 5 ? emission[2] + ':00' : emission[2]}${ufOffset(key)}`
+    const [d, m, yy] = emission[1].split('/')
+    const y = yy.length === 2 ? `20${yy}` : yy
+    const time = emission[2] ? (emission[2].length === 5 ? emission[2] + ':00' : emission[2]) : '12:00:00'
+    issuedAt = `${y}-${m}-${d}T${time}${ufOffset(key)}`
   }
   const totalMatch = plain.match(/Valor a pagar R\$:?\s*([\d.,]+)/i) || plain.match(/Valor total R\$:?\s*([\d.,]+)/i)
   const discountMatch = plain.match(/Descontos? R\$:?\s*([\d.,]+)/i)

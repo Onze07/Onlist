@@ -11,6 +11,9 @@ import { parseAccessKey } from '../../api/_lib/nfce-parse.js'
 // Link do QR (http...) ou chave de acesso digitada/colada (44 números, com ou sem espaços)
 const isLink = s => /^\s*https?:\/\//i.test(String(s || ''))
 
+// Data local AAAA-MM-DD (toISOString usaria UTC e viraria o dia à noite)
+const localDateStr = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
 const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
 
 function fmt(n) {
@@ -39,6 +42,8 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
   const [nota, setNota] = useState(null)
   const [rows, setRows] = useState([])
   const [mercado, setMercado] = useState('')
+  // Data da compra (AAAA-MM-DD): vem da nota; se a SEFAZ não mostrar, o usuário confirma
+  const [purchaseDate, setPurchaseDate] = useState('')
   const [mappings, setMappings] = useState({})
   const [lastUrl, setLastUrl] = useState('')
   // Nota que a SEFAZ ainda não mostra (ex.: contingência): oferecer "ler depois"
@@ -145,6 +150,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
     if (!reconcileWith && found.similar?.[0]?.strong) setReconcileId(found.similar[0].record.id)
     setNota(n)
     setMercado(marketName(n.store, mercadoOptions))
+    setPurchaseDate(n.issuedAt ? n.issuedAt.slice(0, 10) : localDateStr(new Date()))
     setRows(n.items.map(item => {
       const s = suggestTarget(item, catalogItems, mappings)
       const size = packSize(item.name)
@@ -187,7 +193,11 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
       const otherItems = rows.filter(r => !r.include).map(r => ({
         name: r.nf.name, qty: r.nf.qty, unit: r.nf.unit.toLowerCase(), totalPrice: r.nf.total,
       }))
-      const date = nota.issuedAt ? nota.issuedAt.slice(0, 10) : new Date().toISOString().slice(0, 10)
+      // Mesma data da nota: horário exato da emissão; data trocada/confirmada à mão: meio-dia daquele dia
+      const date = purchaseDate || localDateStr(new Date())
+      const createdAt = nota.issuedAt && nota.issuedAt.slice(0, 10) === date
+        ? Timestamp.fromDate(new Date(nota.issuedAt))
+        : Timestamp.fromDate(new Date(`${date}T12:00:00`))
       const mercadoName = mercado.trim() || 'Não informado'
       const historyRef = key ? doc(db, 'families', familyId, 'history', key) : doc(collection(db, 'families', familyId, 'history'))
       const ops = []
@@ -197,7 +207,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
       }
       ops.push(
         b => b.set(historyRef, {
-          createdAt: nota.issuedAt ? Timestamp.fromDate(new Date(nota.issuedAt)) : serverTimestamp(),
+          createdAt,
           mercado: mercadoName,
           listName: original?.listName || listName || 'Nota fiscal',
           finishedBy: original?.finishedBy || user.uid,
@@ -372,10 +382,15 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
               <p className="text-gray-500 text-xs mb-1">Mercado</p>
               <input value={mercado} onChange={e => setMercado(e.target.value)}
                 className="w-full bg-gray-900 text-white text-base px-3 py-2 rounded-lg outline-none border border-gray-700 mb-2" />
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>{nota.issuedAt ? new Date(nota.issuedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''}</span>
+              <div className="flex items-center justify-between gap-2 text-xs text-gray-400">
+                <label className="flex items-center gap-2">
+                  <span className="text-gray-500">Data da compra</span>
+                  <input type="date" value={purchaseDate} max={localDateStr(new Date())} onChange={e => setPurchaseDate(e.target.value)}
+                    className={`bg-gray-900 text-white text-sm px-2 py-1 rounded-lg outline-none border [color-scheme:dark] ${nota.issuedAt ? 'border-gray-700' : 'border-amber-500/60'}`} />
+                </label>
                 <span>{rows.length} itens · <b className="text-white">{fmt(nota.total)}</b></span>
               </div>
+              {!nota.issuedAt && <p className="text-amber-300 text-xs mt-2">A data não apareceu na nota. Confira a data da compra antes de registrar.</p>}
             </div>
 
             <p className="text-gray-500 text-xs mb-2">Confira onde cada item entra. Mesclar mantém um produto só (ex.: todas as marcas de arroz em "Arroz"). Desmarque o que não quer acompanhar o preço: continua contando no total da compra.</p>

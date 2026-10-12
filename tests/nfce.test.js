@@ -175,3 +175,11 @@ test('consulta pela chave: endereços só para RO', () => {
   assert.ok(urls.every(u => u.includes('nfce.sefin.ro.gov.br') && u.includes('11261010581332000160651110000118871999881120')))
   assert.deepEqual(keyConsultUrls('35261010581332000160651110000118871999881120'), [])
 })
+
+test('data de emissão em outros formatos', () => {
+  const p = html => parseNfce(`<div>${html}</div>`).issuedAt
+  assert.equal(p('<li>Emissão: 03/10/2026 11:38:07 - Via Consumidor</li>'), '2026-10-03T11:38:07-03:00')
+  assert.equal(p('Número 11887 Série 111 Emissão 10/10/26 18:06:00'), '2026-10-10T18:06:00-03:00')
+  assert.equal(p('Data de Emissão: 05/09/2026 às 09:15'), '2026-09-05T09:15:00-03:00')
+  assert.equal(p('Emissão: 05/09/2026'), '2026-09-05T12:00:00-03:00')
+})

@@ -91,7 +91,10 @@ async function startByKey(res, rawKey, ctx) {
       continue
     }
     const nota = parseNfce(page.html)
-    if (nota.items.length) return res.status(200).json({ nota: { ...nota, key: nota.key || parsed.key } })
+    if (nota.items.length) {
+      if (!nota.issuedAt) await logLayout(page.html, ctx, 'Data de emissão não encontrada na nota')
+      return res.status(200).json({ nota: { ...nota, key: nota.key || parsed.key } })
+    }
     if (classifyPage(page.html)) return noItems(res, page.html, parsed.key, ctx)
     await logLayout(page.html, ctx, 'Consulta pela chave: página não reconhecida')
   }
@@ -140,7 +143,10 @@ export default async function handler(req, res) {
       if (page.status >= 400) return res.status(502).json({ error: `O portal da SEFAZ não respondeu (${page.status}). Tente de novo.` })
       if (!isCaptchaPage(page.html)) {
         const nota = parseNfce(page.html)
-        if (nota.items.length) return res.status(200).json({ nota: { ...nota, key: nota.key || valid.key } })
+        if (nota.items.length) {
+          if (!nota.issuedAt) await logLayout(page.html, ctx, 'Data de emissão não encontrada na nota')
+          return res.status(200).json({ nota: { ...nota, key: nota.key || valid.key } })
+        }
         return await noItems(res, page.html, valid.key, ctx)
       }
       const out = captchaResponse(page, page.jar, valid.url)
@@ -169,6 +175,7 @@ export default async function handler(req, res) {
         return await noItems(res, page.html, nota.key || urlKey, ctx)
       }
       const key = nota.key || urlKey
+      if (!nota.issuedAt) await logLayout(page.html, ctx, 'Data de emissão não encontrada na nota')
       return res.status(200).json({ nota: { ...nota, key } })
     }
 
