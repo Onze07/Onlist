@@ -5,6 +5,7 @@ import { apiPost } from '../lib/api'
 import { commitInChunks, priceHistoryWrite, queueWrite } from '../lib/firestore'
 import { convertForUnit, findSimilarPurchases, mapUnit, marketName, packSize, suggestTarget, UNITS, UNIT_LABELS } from '../lib/nfceMatch'
 import QrScanner from './QrScanner'
+import { CATEGORIES, suggestCategory } from '../lib/categories'
 import { addPendingNote, isContingencyKey, keyFromUrl, listPendingNotes, removePendingNote } from '../lib/pendingNotes'
 import { parseAccessKey } from '../../api/_lib/nfce-parse.js'
 
@@ -14,7 +15,6 @@ const isLink = s => /^\s*https?:\/\//i.test(String(s || ''))
 // Data local AAAA-MM-DD (toISOString usaria UTC e viraria o dia à noite)
 const localDateStr = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
 
 function fmt(n) {
   return (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -159,7 +159,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
         include: true,
         target: s.type === 'existing'
           ? { type: 'existing', id: s.item.id, reason: s.reason }
-          : { type: 'new', name: s.name, category: 'Mercearia', unit: size ? size.unit : mapUnit(item.unit) },
+          : { type: 'new', name: s.name, category: suggestCategory(item.name) || 'Outros', unit: size ? size.unit : mapUnit(item.unit) },
         alternatives: s.alternatives || [],
       }
     }))
@@ -416,7 +416,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
                         const v = e.target.value
                         if (v === '__new__') {
                           const size = packSize(r.nf.name)
-                          updateRow(i, { target: { type: 'new', name: r.target.name || r.nf.name.split(' ')[0], category: 'Mercearia', unit: size ? size.unit : mapUnit(r.nf.unit) } })
+                          updateRow(i, { target: { type: 'new', name: r.target.name || r.nf.name.split(' ')[0], category: suggestCategory(r.nf.name) || 'Outros', unit: size ? size.unit : mapUnit(r.nf.unit) } })
                         } else updateRow(i, { target: { type: 'existing', id: v } })
                       }}
                       className="w-full bg-gray-800 text-white text-base px-3 py-2 rounded-lg outline-none border border-gray-700">

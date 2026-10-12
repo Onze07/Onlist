@@ -158,3 +158,23 @@ test('planilha: itens sem acompanhar preço entram para somar o total pago', () 
   assert.equal(lines.length, 3)
   assert.ok(lines[2].includes('GRANULADO CAMPILA;Sem acompanhamento;2;un;6,99;13,98'))
 })
+
+// --- Categorias ---
+import { CATEGORIES, suggestCategory, orderCategories } from '../src/lib/categories.js'
+
+test('categorias: sugestão pelo nome do produto (nomes reais de nota)', () => {
+  const cases = {
+    'DIPIRONA 500MG': 'Farmácia', 'OLEO MOTOR 5W30': 'Automotivo', 'OLEO DE SOJA SOYA 900ML': 'Mercearia',
+    'BATATA PALITO CONGELADA': 'Congelados', 'BATATA INGLESA KG': 'Hortifruti', 'FRALDA PAMPERS M': 'Bebê',
+    'RACAO GOLDEN 15KG': 'Pet', 'FILME PVC ROLO WYDA 15': 'Casa e Utilidades', 'ASSADEIRA OVAL OPALINE 1L': 'Casa e Utilidades',
+    'ESPONJA ALKLIN MULT DUPLA FAC 3 UND': 'Limpeza', 'BANANA MACA RG': 'Hortifruti', 'MACARRAO ESPAGUETE': 'Mercearia',
+    'Pão francês': 'Padaria', 'LEITE INTEGRAL': 'Laticínios', 'REFRIGERANTE COCA COLA 2L': 'Bebidas',
+  }
+  for (const [name, cat] of Object.entries(cases)) assert.equal(suggestCategory(name), cat, name)
+  assert.equal(suggestCategory('BERMUDA JEANS'), null)
+  assert.ok(Object.values(cases).every(c => CATEGORIES.includes(c)))
+})
+
+test('categorias: ordem do mercado e categoria antiga não some', () => {
+  assert.deepEqual(orderCategories(['Outros', 'Farmácia', 'Hortifruti', 'Frios']), ['Hortifruti', 'Farmácia', 'Frios', 'Outros'])
+})

@@ -21,8 +21,8 @@ import { cheapest } from '../lib/prices'
 import { IconChevronDown, IconCheck, IconPlus, IconX, IconBell, IconScale, IconUndo, IconTrash, IconCalc } from '../components/Icon'
 import PriceCalculator from '../components/PriceCalculator'
 import ActionChip from '../components/ActionChip'
+import { orderCategories } from '../lib/categories'
 
-const CATEGORY_ORDER = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
 
 function fmt(n) {
   return (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -182,7 +182,8 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       if (!groups[cat]) groups[cat] = []
       groups[cat].push(item)
     }
-    return CATEGORY_ORDER.filter(c => groups[c]).map(c => ({ cat: c, items: groups[c] }))
+    // Categoria antiga ou desconhecida não some da lista
+    return orderCategories(Object.keys(groups)).map(c => ({ cat: c, items: groups[c] }))
   }
 
   function doCheck(entry, priceOverride) {

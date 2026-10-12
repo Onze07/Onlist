@@ -7,12 +7,12 @@ import { roundTo } from '../lib/money'
 import { useVisualViewport } from '../lib/useVisualViewport'
 import MoneyInput from './MoneyInput'
 import { UNITS, UNIT_LABELS } from '../lib/nfceMatch'
+import { CATEGORIES, CATEGORY_EXAMPLES, suggestCategory } from '../lib/categories'
 
 function fmtBRL(n) {
   return Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
 
 const empty = { name: '', obs: '', brand: '', category: 'Mercearia', qty: '1', unit: 'un', pricePerUnit: 0, totalPrice: 0 }
 
@@ -57,8 +57,15 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
     })
   }
 
+  // Item novo: a categoria acompanha o nome digitado até a pessoa escolher uma
+  const [categoryTouched, setCategoryTouched] = useState(!isNew)
+
   function handleNameChange(val) {
     set('name', val)
+    if (!categoryTouched) {
+      const cat = suggestCategory(val)
+      if (cat) set('category', cat)
+    }
     if (val.length < 2) { setSuggestions([]); return }
     setSuggestions(catalog.filter(i => i.name.toLowerCase().includes(val.toLowerCase())).slice(0, 5))
   }
@@ -73,6 +80,7 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
       totalPrice: roundTo((parsePrice(prev.qty) || 0) * (Number(item.lastPrice) || 0), 2),
     }))
     setSuggestions([])
+    setCategoryTouched(true)
   }
 
   const [categoryError, setCategoryError] = useState(false)
@@ -131,7 +139,7 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
 
         {/* Categoria + unidade */}
         <div className="flex gap-2 mb-2">
-          <select value={form.category} onChange={e => { set('category', e.target.value); setCategoryError(false) }}
+          <select value={form.category} onChange={e => { set('category', e.target.value); setCategoryError(false); setCategoryTouched(true) }}
             className={`flex-1 min-w-0 px-3 py-2.5 text-base ${field} ${categoryError ? '!border-red-500' : ''}`}>
             <option value="">Categoria…</option>
             {CATEGORIES.map(c => <option key={c}>{c}</option>)}
@@ -142,6 +150,9 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
           </select>
         </div>
         {categoryError && <p className="text-red-400 text-xs -mt-1 mb-2 px-1">Escolha uma categoria</p>}
+        {!categoryError && CATEGORY_EXAMPLES[form.category] && (
+          <p className="text-gray-600 text-[11px] -mt-1 mb-2 px-1">{form.category}: {CATEGORY_EXAMPLES[form.category]}</p>
+        )}
 
         {/* Quantidade + valores */}
         <div className="grid grid-cols-3 gap-2 mb-2">

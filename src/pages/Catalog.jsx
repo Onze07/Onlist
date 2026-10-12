@@ -7,8 +7,8 @@ import { latestByMarket } from '../lib/prices'
 import MoneyInput from '../components/MoneyInput'
 import { IconEdit, IconTrash, IconChevronDown, IconChevronRight, IconTrendingUp } from '../components/Icon'
 import { UNITS, UNIT_LABELS } from '../lib/nfceMatch'
+import { CATEGORIES, orderCategories } from '../lib/categories'
 
-const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
 
 function fmt(n) {
   if (!n) return '—'
@@ -46,7 +46,7 @@ export default function Catalog({ onAddToList }) {
     if (!groups[cat]) groups[cat] = []
     groups[cat].push(item)
   }
-  const groupOrder = CATEGORIES.filter(c => groups[c])
+  const groupOrder = orderCategories(Object.keys(groups))
 
   async function saveEdit(id, data) {
     await updateDoc(doc(db, 'families', familyId, 'catalog', id), data)
