@@ -23,9 +23,14 @@ export function removePendingNote(fid, keyOrUrl) {
   save(fid, listPendingNotes(fid).filter(n => n.key !== keyOrUrl && n.url !== keyOrUrl))
 }
 
-// Chave da nota a partir do link do QR (para saber se é contingência antes de consultar)
-export function keyFromUrl(url) {
-  try { return (new URL(String(url).trim()).searchParams.get('p') || '').match(/\d{44}/)?.[0] || null } catch { return null }
+// Chave da nota a partir do link do QR ou da própria chave digitada (para saber se é contingência antes de consultar)
+export function keyFromUrl(input) {
+  const raw = String(input || '').trim()
+  if (!/^https?:/i.test(raw)) {
+    const digits = raw.replace(/\D/g, '')
+    return digits.length === 44 ? digits : null
+  }
+  try { return (new URL(raw).searchParams.get('p') || '').match(/\d{44}/)?.[0] || null } catch { return null }
 }
 
 export const isContingencyKey = key => /^\d{44}$/.test(key || '') && key[34] === '9'

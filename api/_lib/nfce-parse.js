@@ -147,3 +147,36 @@ export function notFoundMessage(reason, info) {
     retryLater: true,
   }
 }
+
+// Dígito verificador da chave de acesso (módulo 11, pesos 2 a 9 da direita para a esquerda)
+export function accessKeyDv(key43) {
+  let sum = 0
+  let w = 2
+  for (let i = key43.length - 1; i >= 0; i--) {
+    sum += Number(key43[i]) * w
+    w = w === 9 ? 2 : w + 1
+  }
+  const r = sum % 11
+  return r < 2 ? 0 : 11 - r
+}
+
+// Chave digitada ou colada (aceita espaços e pontos): { key } ou { error }
+export function parseAccessKey(raw) {
+  const digits = String(raw || '').replace(/\D/g, '')
+  if (digits.length !== 44) return { error: `A chave de acesso tem 44 números (você digitou ${digits.length}).` }
+  if (accessKeyDv(digits.slice(0, 43)) !== Number(digits[43])) return { error: 'Chave inválida: algum número foi digitado errado. Confira e tente de novo.' }
+  if (digits.slice(20, 22) !== '65') return { error: 'Esta chave não é de cupom fiscal (NFC-e).' }
+  return { key: digits }
+}
+
+// Endereços de consulta só pela chave (sem o código de segurança do QR), por estado.
+// Tentados em ordem; o primeiro que a SEFAZ aceitar é usado.
+const KEY_PORTALS = {
+  11: key => [
+    `http://www.nfce.sefin.ro.gov.br/consultanfce/consulta.jsp?p=${key}|2|1`,
+    `http://www.nfce.sefin.ro.gov.br/consultanfce/consulta.jsp?p=${key}`,
+  ],
+}
+export function keyConsultUrls(key) {
+  return KEY_PORTALS[String(key).slice(0, 2)]?.(key) || []
+}

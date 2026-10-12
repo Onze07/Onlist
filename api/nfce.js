@@ -4,7 +4,7 @@
 // O usuário digita o captcha no app; nada é resolvido automaticamente.
 import { initializeApp, cert, getApps } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
-import { parseNfce, isCaptchaPage, extractCaptcha, validNfceUrl, keyInfo, classifyPage, notFoundMessage } from './_lib/nfce-parse.js'
+import { parseNfce, isCaptchaPage, extractCaptcha, validNfceUrl, keyInfo, classifyPage, notFoundMessage, parseAccessKey, keyConsultUrls } from './_lib/nfce-parse.js'
 
 const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
 
@@ -65,10 +65,35 @@ async function request(url, { method = 'GET', body, jar = {}, referer } = {}) {
 const encode = obj => Buffer.from(JSON.stringify(obj)).toString('base64url')
 const decode = str => JSON.parse(Buffer.from(String(str), 'base64url').toString('utf8'))
 
-function captchaResponse(page, jar, url) {
+function captchaResponse(page, jar, url, byKey = false) {
   const c = extractCaptcha(page.html)
   if (!c.image || !c.csrf) return null
-  return { captcha: c.image, session: encode({ jar, csrf: c.csrf, action: new URL(c.action, page.url).toString(), referer: page.url, url }) }
+  return { captcha: c.image, session: encode({ jar, csrf: c.csrf, action: new URL(c.action, page.url).toString(), referer: page.url, url, byKey }) }
+}
+
+const KEY_ONLY_REFUSED = 'A SEFAZ não aceitou a consulta só pela chave. Use o QR code ou copie o link "Visualizar NFC-e" no app Nota Legal e cole aqui.'
+
+// Consulta digitando/colando a chave de acesso (QR danificado, chave copiada de outro app)
+async function startByKey(res, rawKey) {
+  const parsed = parseAccessKey(rawKey)
+  if (parsed.error) return res.status(400).json({ error: parsed.error })
+  const urls = keyConsultUrls(parsed.key)
+  if (!urls.length) return res.status(400).json({ error: 'Por enquanto, a consulta pela chave funciona só para notas de Rondônia. Use o QR code.' })
+  const contingency = !!keyInfo(parsed.key)?.contingency
+  for (const url of urls) {
+    const page = await request(url)
+    if (page.status >= 400) continue
+    if (isCaptchaPage(page.html)) {
+      const out = captchaResponse(page, page.jar, url, true)
+      if (out) return res.status(200).json({ ...out, key: parsed.key, contingency })
+      continue
+    }
+    const nota = parseNfce(page.html)
+    if (nota.items.length) return res.status(200).json({ nota: { ...nota, key: nota.key || parsed.key } })
+    if (classifyPage(page.html)) return noItems(res, page.html, parsed.key)
+    logLayout(page.html)
+  }
+  return res.status(422).json({ error: KEY_ONLY_REFUSED, reason: 'key_refused', key: parsed.key })
 }
 
 // Log sem dados pessoais (para ajustar o leitor se a SEFAZ mudar o layout)
@@ -98,6 +123,8 @@ export default async function handler(req, res) {
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {})
 
+    if (body.action === 'start' && body.key) return await startByKey(res, body.key)
+
     if (body.action === 'start') {
       const valid = validNfceUrl(body.url)
       if (!valid) return res.status(400).json({ error: 'Link inválido. Leia o QR code da nota fiscal.' })
@@ -120,12 +147,19 @@ export default async function handler(req, res) {
       const form = new URLSearchParams({ sefin_response: answer, csrf_token: s.csrf })
       const page = await request(s.action, { method: 'POST', body: form.toString(), jar: s.jar, referer: s.referer })
       if (isCaptchaPage(page.html)) {
-        const out = captchaResponse(page, page.jar, s.url)
+        const out = captchaResponse(page, page.jar, s.url, s.byKey)
         return res.status(200).json({ ...(out || {}), error: 'Texto incorreto. Tente de novo.' })
       }
       const nota = parseNfce(page.html)
       const urlKey = (validNfceUrl(s.url) || {}).key || null
-      if (!nota.items.length) return noItems(res, page.html, nota.key || urlKey)
+      if (!nota.items.length) {
+        // Só pela chave: página sem motivo conhecido provavelmente é a SEFAZ exigindo o código do QR
+        if (s.byKey && !classifyPage(page.html)) {
+          logLayout(page.html)
+          return res.status(422).json({ error: KEY_ONLY_REFUSED, reason: 'key_refused', key: urlKey })
+        }
+        return noItems(res, page.html, nota.key || urlKey)
+      }
       const key = nota.key || urlKey
       return res.status(200).json({ nota: { ...nota, key } })
     }

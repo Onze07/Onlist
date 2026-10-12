@@ -6,6 +6,10 @@ import { commitInChunks, priceHistoryWrite, queueWrite } from '../lib/firestore'
 import { convertForUnit, findSimilarPurchases, mapUnit, marketName, packSize, suggestTarget, UNITS, UNIT_LABELS } from '../lib/nfceMatch'
 import QrScanner from './QrScanner'
 import { addPendingNote, isContingencyKey, keyFromUrl, listPendingNotes, removePendingNote } from '../lib/pendingNotes'
+import { parseAccessKey } from '../../api/_lib/nfce-parse.js'
+
+// Link do QR (http...) ou chave de acesso digitada/colada (44 números, com ou sem espaços)
+const isLink = s => /^\s*https?:\/\//i.test(String(s || ''))
 
 const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
 
@@ -77,10 +81,16 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
   const start = useCallback(async (url) => {
     setError('')
     setRetry(null)
+    // Chave digitada: confere o dígito verificador antes de consultar a SEFAZ
+    if (!isLink(url)) {
+      const parsed = parseAccessKey(url)
+      if (parsed.error) { setError(parsed.error); setStep('scan'); return }
+      url = parsed.key
+    }
     setLastUrl(url)
     setStep('loading')
     try {
-      const r = await apiPost('/api/nfce', { action: 'start', url })
+      const r = await apiPost('/api/nfce', isLink(url) ? { action: 'start', url } : { action: 'start', key: url })
       if (r.nota) return showReview(r.nota)
       setCaptcha(r.captcha); setSession(r.session); setAnswer('')
       setStep('captcha')
@@ -273,13 +283,24 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
             )}
             <QrScanner onResult={start} />
             <div>
-              <p className="text-gray-500 text-xs mb-1.5">Ou cole o link do QR code</p>
+              <p className="text-gray-500 text-xs mb-1.5">Ou digite a chave de acesso (44 números) ou cole o link da nota</p>
               <div className="flex gap-2">
-                <input value={link} onChange={e => setLink(e.target.value)} placeholder="http://www.nfce.sefin.ro.gov.br/..."
+                <input value={link} onChange={e => setLink(e.target.value)} onKeyDown={e => e.key === 'Enter' && link.trim() && start(link)}
+                  placeholder="1126 1010 5813 3200 ..." inputMode={isLink(link) ? 'url' : 'numeric'} autoComplete="off"
                   className="flex-1 min-w-0 bg-gray-800 text-white text-base px-3 py-2.5 rounded-xl outline-none border border-transparent focus:border-green-500" />
                 <button onClick={() => start(link)} disabled={!link.trim()}
                   className="bg-green-500 disabled:opacity-40 text-white font-semibold px-4 rounded-xl">Ler</button>
               </div>
+              {link.trim() && !isLink(link) && (() => {
+                const n = link.replace(/\D/g, '').length
+                const ok = n === 44 && !parseAccessKey(link).error
+                return (
+                  <p className={`text-xs mt-1.5 ${ok ? 'text-green-400' : n === 44 ? 'text-red-300' : 'text-gray-500'}`}>
+                    {ok ? '✓ Chave válida' : n === 44 ? parseAccessKey(link).error : `${n} de 44 números`}
+                  </p>
+                )
+              })()}
+              <p className="text-gray-600 text-[11px] mt-1">A chave fica embaixo do QR no cupom. No app Nota Legal, dá para copiar a chave ou o link "Visualizar NFC-e".</p>
             </div>
           </div>
         )}
