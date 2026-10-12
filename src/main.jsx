@@ -7,8 +7,10 @@ import { FamilyProvider } from './context/FamilyContext'
 import { registerSW } from 'virtual:pwa-register'
 import './lib/install'
 import { captureInviteFromUrl } from './lib/invite'
+import { installErrorReporter } from './lib/errorReporter'
 
 captureInviteFromUrl()
+installErrorReporter()
 
 // Versão nova publicada: atualiza sozinho. Checa ao abrir/voltar para o app e a cada 30 min.
 registerSW({

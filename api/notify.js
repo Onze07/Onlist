@@ -2,6 +2,7 @@
 // Variável de ambiente na Vercel: FIREBASE_SERVICE_ACCOUNT (JSON da conta de serviço)
 import { initializeApp, cert, getApps } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
+import { logError } from './_lib/errlog.js'
 import { getFirestore, FieldValue } from 'firebase-admin/firestore'
 import { getMessaging } from 'firebase-admin/messaging'
 import { planNotification } from './_lib/notify-core.js'
@@ -67,6 +68,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ sent, targets: plan.targets.length, withoutDevice: plan.withoutDevice })
   } catch (e) {
     console.error('notify', e)
+    await logError(getApps().length ? getFirestore() : null, { source: 'server', kind: 'exception', message: `/api/notify: ${e.message}`, detail: e.stack, path: '/api/notify' })
     return res.status(500).json({ error: 'Não foi possível enviar o aviso' })
   }
 }

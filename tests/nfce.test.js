@@ -150,3 +150,28 @@ test('página sem itens: classifica o motivo e sugere tentar depois', () => {
   assert.equal(notFoundMessage(null, { contingency: false }).retryLater, true)
   assert.equal(notFoundMessage('canceled', {}).retryLater, false)
 })
+
+// --- Chave digitada ---
+import { accessKeyDv, parseAccessKey, keyConsultUrls } from '../api/_lib/nfce-parse.js'
+
+test('chave digitada: confere o dígito verificador com chaves reais', () => {
+  for (const k of ['11261010581332000160651110000118871999881120', '11261079379491010499650060001266681902009260', '11261004082624003767650140002515281350930174']) {
+    assert.equal(accessKeyDv(k.slice(0, 43)), Number(k[43]))
+    assert.equal(parseAccessKey(k).key, k)
+  }
+  // Com espaços, como impressa no cupom
+  assert.equal(parseAccessKey('1126 1010 5813 3200 0160 6511 1000 0118 8719 9988 1120').key, '11261010581332000160651110000118871999881120')
+  // Um número trocado
+  assert.match(parseAccessKey('11261010581332000160651110000118871999881121').error, /digitado errado/)
+  assert.match(parseAccessKey('1126 1010').error, /44 números/)
+  // Modelo 55 (NF-e de empresa) não é cupom
+  const nfe = '1126101058133200016055111000011887199988112'
+  assert.match(parseAccessKey(nfe + accessKeyDv(nfe)).error, /NFC-e/)
+})
+
+test('consulta pela chave: endereços só para RO', () => {
+  const urls = keyConsultUrls('11261010581332000160651110000118871999881120')
+  assert.equal(urls.length, 2)
+  assert.ok(urls.every(u => u.includes('nfce.sefin.ro.gov.br') && u.includes('11261010581332000160651110000118871999881120')))
+  assert.deepEqual(keyConsultUrls('35261010581332000160651110000118871999881120'), [])
+})

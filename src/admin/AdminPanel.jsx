@@ -342,11 +342,95 @@ function SupportList({ feedback, onChanged }) {
   )
 }
 
+// Erros registrados pelo app e pelo servidor, agrupados pela mesma falha
+const ERROR_SOURCE = {
+  app: { label: 'App', cls: 'bg-blue-500/15 text-blue-300 border-blue-500/30' },
+  server: { label: 'Servidor', cls: 'bg-red-500/15 text-red-300 border-red-500/30' },
+  nfce: { label: 'Nota fiscal', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
+}
+
+function ErrorGroup({ g, onCleared }) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const src = ERROR_SOURCE[g.source] || ERROR_SOURCE.server
+  async function clear() {
+    if (!confirm('Marcar como resolvido? As ocorrências deste erro serão apagadas.')) return
+    setBusy(true)
+    try { await adminApi('clearErrors', { fp: g.fp }); onCleared() } catch (e) { alert(e.message); setBusy(false) }
+  }
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl">
+      <button onClick={() => setOpen(v => !v)} className="w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-gray-800/40 rounded-2xl">
+        <span className={`text-[11px] px-2 py-0.5 rounded-full border whitespace-nowrap mt-0.5 ${src.cls}`}>{src.label}</span>
+        <span className="flex-1 min-w-0">
+          <span className="text-gray-100 text-sm block break-words">{g.message}</span>
+          <span className="text-gray-500 text-xs">{g.kind} · {g.count}× · {g.users} {g.users === 1 ? 'pessoa' : 'pessoas'} · última {ago(g.lastAt)}</span>
+        </span>
+        <span className="text-gray-500 text-xs mt-1">{open ? '▴' : '▾'}</span>
+      </button>
+      {open && (
+        <div className="px-4 pb-4 flex flex-col gap-3">
+          {g.samples.map(sm => (
+            <div key={sm.id} className="border border-gray-800 rounded-xl p-3 text-xs">
+              <p className="text-gray-400">
+                {new Date(sm.at).toLocaleString('pt-BR')}{sm.email ? ` · ${sm.email}` : ''}{sm.path ? ` · ${sm.path}` : ''}{sm.appVersion ? ` · v${sm.appVersion}` : ''}
+              </p>
+              {sm.userAgent && <p className="text-gray-600 mt-0.5 truncate" title={sm.userAgent}>{sm.userAgent}</p>}
+              {sm.detail && <pre className="mt-2 text-gray-300 bg-gray-950 rounded-lg p-2 max-h-48 overflow-auto whitespace-pre-wrap break-words">{sm.detail}</pre>}
+            </div>
+          ))}
+          <div className="flex justify-end">
+            <button disabled={busy} onClick={clear}
+              className="text-sm px-3 py-1.5 rounded-lg bg-green-500 hover:bg-green-400 text-white font-medium disabled:opacity-50">Marcar resolvido</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ErrorsList({ onChanged }) {
+  const [days, setDays] = useState(7)
+  const [source, setSource] = useState('all')
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+  const load = useCallback(() => {
+    setError('')
+    adminApi('errors', { days }).then(setData).catch(e => setError(e.message))
+  }, [days])
+  useEffect(() => { setData(null); load() }, [load])
+
+  const groups = (data?.groups || []).filter(g => source === 'all' || g.source === source)
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {[[1, '24 horas'], [7, '7 dias'], [30, '30 dias']].map(([d, label]) => (
+          <button key={d} onClick={() => setDays(d)} aria-pressed={days === d}
+            className={`text-sm px-3 py-1.5 rounded-lg border ${days === d ? 'bg-green-500/15 border-green-500/40 text-green-300' : 'bg-gray-900 border-gray-800 text-gray-400 hover:text-white'}`}>{label}</button>
+        ))}
+        <span className="w-3" />
+        {[['all', 'Todos'], ['app', 'App'], ['nfce', 'Nota fiscal'], ['server', 'Servidor']].map(([id, label]) => (
+          <button key={id} onClick={() => setSource(id)} aria-pressed={source === id}
+            className={`text-sm px-3 py-1.5 rounded-lg border ${source === id ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-900 border-gray-800 text-gray-400 hover:text-white'}`}>{label}</button>
+        ))}
+      </div>
+      {error && <p className="text-red-300 text-sm">{error}</p>}
+      {!data && !error && <div className="py-24 flex justify-center"><Spinner /></div>}
+      {data && (
+        <p className="text-gray-500 text-xs">{data.total} ocorrências em {groups.length} {groups.length === 1 ? 'tipo de erro' : 'tipos de erro'} · {data.last24h} nas últimas 24 horas</p>
+      )}
+      {data && groups.length === 0 && <p className="text-gray-500 text-sm">Nenhum erro no período. 🎉</p>}
+      {groups.map(g => <ErrorGroup key={g.fp} g={g} onCleared={() => { load(); onChanged() }} />)}
+    </div>
+  )
+}
+
 const NAV = [
   { id: 'overview', label: 'Visão geral', icon: '◧' },
   { id: 'families', label: 'Famílias', icon: '⌂' },
   { id: 'nofamily', label: 'Sem família', icon: '◌' },
   { id: 'feedback', label: 'Suporte', icon: '✉' },
+  { id: 'errors', label: 'Erros', icon: '⚠' },
 ]
 
 export default function AdminPanel({ user, onSignOut }) {
@@ -387,7 +471,7 @@ export default function AdminPanel({ user, onSignOut }) {
   }, [data, search, sort])
 
   const k = data?.kpis
-  const counts = { families: k?.families, nofamily: k?.usersNoFamily, feedback: k?.feedbackOpen ?? k?.feedback }
+  const counts = { families: k?.families, nofamily: k?.usersNoFamily, feedback: k?.feedbackOpen ?? k?.feedback, errors: k?.errors24h }
   const title = NAV.find(n => n.id === tab)?.label
 
   return (
@@ -446,6 +530,7 @@ export default function AdminPanel({ user, onSignOut }) {
               <Tile label="Pagantes" value={k.paying} hint={`${k.founders ?? 0} fundadores · ${k.premium ?? 0} premium · ${k.basic ?? 0} básico`} />
               <Tile label="Receita mensal" value={fmtMoney(k.mrr)} hint="planos ativos · anual ÷ 12" />
               <Tile label="Suporte em aberto" value={k.feedbackOpen ?? k.feedback} hint={`${k.feedback} mensagens no total`} />
+              <Tile label="Erros (24 horas)" value={k.errors24h ?? 0} hint="app, nota fiscal e servidor" />
             </div>
             <div className="grid lg:grid-cols-[3fr_2fr] gap-3">
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
@@ -542,6 +627,7 @@ export default function AdminPanel({ user, onSignOut }) {
           </div>
         )}
 
+        {tab === 'errors' && <ErrorsList onChanged={load} />}
         {tab === 'feedback' && <SupportList feedback={feedback} onChanged={() => { setFeedback(null); load() }} />}
       </main>
 

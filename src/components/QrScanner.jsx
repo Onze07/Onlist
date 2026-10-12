@@ -41,7 +41,7 @@ export default function QrScanner({ onResult }) {
       } catch (e) {
         setError(e.name === 'NotAllowedError'
           ? 'Permita o uso da câmera nas configurações do aparelho, ou cole o link da nota abaixo.'
-          : 'Não foi possível abrir a câmera. Cole o link da nota abaixo.')
+          : 'Não foi possível abrir a câmera. Digite a chave ou cole o link abaixo.')
       }
     }
     start()

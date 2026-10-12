@@ -2,10 +2,12 @@
 // Variáveis na Vercel: FIREBASE_SERVICE_ACCOUNT (já existe) e ADMIN_EMAILS (e-mails com acesso, separados por vírgula)
 import { initializeApp, cert, getApps } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
+import { logError } from './_lib/errlog.js'
 import { getFirestore } from 'firebase-admin/firestore'
 import { getMessaging } from 'firebase-admin/messaging'
 import { AdminError, isAdminEmail, overview, familyDetail, setPlan, listFeedback, setFeedbackStatus } from './_lib/admin-core.js'
 import { notifyResolved } from './_lib/support-core.js'
+import { listErrors, clearErrorGroup } from './_lib/errlog.js'
 
 export const config = { maxDuration: 60 }
 
@@ -42,6 +44,8 @@ export default async function handler(req, res) {
       case 'family': return res.status(200).json(await familyDetail({ fs, auth, familyId: body.familyId }))
       case 'setPlan': return res.status(200).json(await setPlan({ fs, familyId: body.familyId, plan: body.plan, adminEmail: token.email }))
       case 'feedback': return res.status(200).json({ feedback: await listFeedback({ fs }) })
+      case 'errors': return res.status(200).json(await listErrors(fs, { days: Number(body.days) || 7 }))
+      case 'clearErrors': return res.status(200).json(await clearErrorGroup(fs, body.fp))
       case 'feedbackStatus': return res.status(200).json(await setFeedbackStatus({
         fs, id: body.id, status: body.status, note: body.note, reply: body.reply, adminEmail: token.email,
         // Resolvido: cartão no app + push "Sua solicitação foi atendida" (falha no push não desfaz a mudança)
@@ -53,6 +57,7 @@ export default async function handler(req, res) {
   } catch (e) {
     if (e instanceof AdminError) return res.status(e.status).json({ error: e.message })
     console.error('admin', e)
+    await logError(getApps().length ? getFirestore() : null, { source: 'server', kind: 'exception', message: `/api/admin: ${e.message}`, detail: e.stack, path: '/api/admin' })
     return res.status(500).json({ error: 'Erro no painel. Tente de novo.' })
   }
 }

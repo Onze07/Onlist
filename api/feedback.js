@@ -3,6 +3,7 @@
 // opcionais SUPPORT_EMAIL_TO (padrão: ADMIN_EMAILS) e RESEND_FROM (padrão: remetente de teste do Resend)
 import { initializeApp, cert, getApps } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
+import { logError } from './_lib/errlog.js'
 import { getFirestore } from 'firebase-admin/firestore'
 import { SupportError, createFeedback, sendEmail, supportEmail } from './_lib/support-core.js'
 
@@ -46,6 +47,7 @@ export default async function handler(req, res) {
   } catch (e) {
     if (e instanceof SupportError) return res.status(e.status).json({ error: e.message })
     console.error('feedback', e)
+    await logError(getApps().length ? getFirestore() : null, { source: 'server', kind: 'exception', message: `/api/feedback: ${e.message}`, detail: e.stack, path: '/api/feedback' })
     return res.status(500).json({ error: 'Não foi possível enviar. Tente de novo.' })
   }
 }
