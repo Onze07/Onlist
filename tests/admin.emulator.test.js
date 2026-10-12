@@ -149,3 +149,32 @@ test('suporte: ao resolver, o usuário recebe a resposta no app (uma vez só)', 
   assert.equal(calls, 1) // já estava resolvido: não avisa de novo
   assert.equal((await listFeedback({ fs })).find(f => f.id === fb.id).reply, 'Corrigido na versão nova!')
 })
+
+// --- Log de erros ---
+import { logError, listErrors, clearErrorGroup, sanitize, fingerprint } from '../api/_lib/errlog.js'
+
+test('erros: sem dados pessoais e mesma falha no mesmo grupo', () => {
+  assert.equal(sanitize('CPF 013.586.362-73 e 01358636273'), 'CPF [cpf] e [cpf]')
+  assert.equal(sanitize('img base64,AAAA== fim'), 'img base64,[img] fim')
+  assert.equal(fingerprint({ source: 'nfce', kind: 'layout', message: 'Nota 123 falhou' }), fingerprint({ source: 'nfce', kind: 'layout', message: 'Nota 456 falhou' }))
+  assert.notEqual(fingerprint({ source: 'app', kind: 'x', message: 'a' }), fingerprint({ source: 'nfce', kind: 'x', message: 'a' }))
+})
+
+test('erros: grava, agrupa por falha, conta pessoas e resolve', async () => {
+  await fs.recursiveDelete(fs.collection('errorLogs'))
+  await logError(fs, { source: 'nfce', kind: 'layout', message: 'Página da SEFAZ não reconhecida', detail: 'CPF 013.586.362-73', uid: 'ana', email: 'ana@x.com' })
+  await logError(fs, { source: 'nfce', kind: 'layout', message: 'Página da SEFAZ não reconhecida', uid: 'eli' })
+  await logError(fs, { source: 'app', kind: 'tela', message: 'x is undefined', uid: 'ana' })
+  assert.equal(await logError(null, { message: 'sem banco' }), null) // nunca lança
+  const r = await listErrors(fs, { days: 1 })
+  assert.equal(r.total, 3)
+  assert.equal(r.last24h, 3)
+  assert.equal(r.groups.length, 2)
+  const nf = r.groups.find(g => g.source === 'nfce')
+  assert.equal(nf.count, 2)
+  assert.equal(nf.users, 2)
+  assert.ok(nf.samples.every(sm => !String(sm.detail || '').includes('013.586')))
+  assert.equal((await overview({ fs, auth })).kpis.errors24h, 3)
+  assert.equal((await clearErrorGroup(fs, nf.fp)).deleted, 2)
+  assert.equal((await listErrors(fs, { days: 1 })).groups.length, 1)
+})

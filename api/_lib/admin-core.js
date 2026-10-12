@@ -100,10 +100,11 @@ async function familySummary(fs, doc, since30) {
 
 export async function overview({ fs, auth, now = Date.now() }) {
   // Sem collectionGroup: não exige índice extra no Firestore
-  const [familiesSnap, users, feedbackSnap] = await Promise.all([
+  const [familiesSnap, users, feedbackSnap, errors24h] = await Promise.all([
     fs.collection('families').get(),
     listAllUsers(auth),
     fs.collection('feedback').select('status').get(),
+    fs.collection('errorLogs').where('createdAt', '>=', Timestamp.fromMillis(now - DAY)).count().get(),
   ])
   const since30 = Timestamp.fromMillis(now - 30 * DAY)
   const families = await Promise.all(familiesSnap.docs.map(d => familySummary(fs, d, since30)))
@@ -141,6 +142,7 @@ export async function overview({ fs, auth, now = Date.now() }) {
       premium: byTier('premium'),
       feedback: feedbackSnap.size,
       feedbackOpen: openFeedback,
+      errors24h: errors24h.data().count,
     },
     families,
     // Cadastrou e não criou nem entrou em família: quem precisa de ajuda no começo

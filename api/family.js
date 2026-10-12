@@ -2,6 +2,7 @@
 // Variável de ambiente na Vercel: FIREBASE_SERVICE_ACCOUNT (JSON da conta de serviço)
 import { initializeApp, cert, getApps } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
+import { logError } from './_lib/errlog.js'
 import { getFirestore } from 'firebase-admin/firestore'
 import { FamilyError, switchFamily } from './_lib/family-core.js'
 
@@ -40,6 +41,7 @@ export default async function handler(req, res) {
   } catch (e) {
     if (e instanceof FamilyError) return res.status(e.status).json({ error: e.message })
     console.error('family', e)
+    await logError(getApps().length ? getFirestore() : null, { source: 'server', kind: 'exception', message: `/api/family: ${e.message}`, detail: e.stack, path: '/api/family' })
     return res.status(500).json({ error: 'Não foi possível trocar de família. Tente de novo.' })
   }
 }
