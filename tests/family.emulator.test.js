@@ -3,7 +3,7 @@ import { after, before, beforeEach, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { initializeApp, deleteApp } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
-import { switchFamily, joinWithCode, mergePriceHistory, mergeCatalogItem } from '../api/_lib/family-core.js'
+import { switchFamily, joinWithCode, mergePriceHistory, mergeCatalogItem, resumeMove, deleteAccount, mergeFamilyData } from '../api/_lib/family-core.js'
 import { hit, RateLimitError } from '../api/_lib/ratelimit.js'
 
 let app, fs
@@ -20,6 +20,7 @@ beforeEach(async () => {
   await fs.recursiveDelete(fs.collection('familyCodes'))
   await fs.recursiveDelete(fs.collection('users'))
   await fs.recursiveDelete(fs.collection('rateLimits'))
+  await fs.recursiveDelete(fs.collection('moves'))
 
   // Família do Élinton (destino), com Leo como membro
   await fs.doc('families/el').set({ code: 'ELI234', createdBy: 'eli', members: ['eli', 'leo'], admins: [] })
@@ -156,4 +157,58 @@ test('limite por janela: passa do limite, espera a janela virar', async () => {
   await assert.rejects(hit(fs, 'nfce_ana', opts, t0 + 10_000), e => e instanceof RateLimitError && /Calma\. Tente de novo em 50 segundos/.test(e.message))
   await hit(fs, 'nfce_ana', opts, t0 + 61_000)
   await hit(fs, 'nfce_eli', opts, t0 + 10_000) // cada usuário tem o seu limite
+})
+
+test('troca interrompida: resumeMove termina sem duplicar e "já está" não trava', async () => {
+  // Simula a queda logo depois de entrar: usuário já na nova, família antiga ainda existe
+  await fs.doc('families/el').update({ members: ['eli', 'leo', 'ana'] })
+  await fs.doc('users/ana').set({ familyId: 'el', movePending: true }, { merge: true })
+  await fs.doc('moves/ana').set({ from: 'ana', to: 'el', owner: true, mode: 'merge' })
+  // Metade da cópia já tinha rodado
+  await mergeFamilyData(fs, 'ana', 'el', 'Ana Souza')
+
+  const r = await switchFamily({ fs, uid: 'ana', profile, code: 'ELI234', mode: 'merge' })
+  assert.equal(r.familyId, 'el')
+  assert.equal((await fs.doc('families/ana').get()).exists, false)
+  assert.equal((await fs.doc('moves/ana').get()).exists, false)
+  assert.equal((await fs.doc('users/ana').get()).data().movePending, undefined)
+  assert.equal((await fs.collection('families/el/lists').get()).size, 1) // não duplicou a lista
+  assert.equal((await fs.doc('families/el/catalog/arroz').get()).data().priceHistory.length, 2)
+  // Sem troca pendente, resume não faz nada
+  assert.deepEqual(await resumeMove({ fs, uid: 'ana', profile }), { familyId: null, merged: null })
+})
+
+test('troca normal não deixa pendência', async () => {
+  await switchFamily({ fs, uid: 'ana', profile, code: 'ELI234', mode: 'fresh' })
+  assert.equal((await fs.doc('moves/ana').get()).exists, false)
+  assert.equal((await fs.doc('users/ana').get()).data().movePending, undefined)
+})
+
+const fakeAuth = () => { const deleted = []; return { deleted, deleteUser: async uid => { deleted.push(uid) } } }
+
+test('excluir conta: dono sozinho apaga a família inteira', async () => {
+  await fs.doc('users/ana/private/x').set({ a: 1 })
+  const auth = fakeAuth()
+  const r = await deleteAccount({ fs, auth, uid: 'ana' })
+  assert.equal(r.familyId, 'ana')
+  assert.equal((await fs.doc('families/ana').get()).exists, false)
+  assert.equal((await fs.collection('families/ana/catalog').get()).size, 0)
+  assert.equal((await fs.doc('familyCodes/ANA234').get()).exists, false)
+  assert.equal((await fs.doc('users/ana').get()).exists, false)
+  assert.equal((await fs.doc('users/ana/private/x').get()).exists, false)
+  assert.deepEqual(auth.deleted, ['ana'])
+})
+
+test('excluir conta: membro só sai; dono com membros é recusado', async () => {
+  await fs.doc('users/leo').set({ familyId: 'el' })
+  await fs.doc('families/el/profiles/leo').set({ name: 'Leo' })
+  await deleteAccount({ fs, auth: fakeAuth(), uid: 'leo' })
+  assert.deepEqual((await fs.doc('families/el').get()).data().members, ['eli'])
+  assert.equal((await fs.doc('families/el/profiles/leo').get()).exists, false)
+
+  await fs.doc('families/el').update({ members: ['eli', 'zed'] })
+  const auth = fakeAuth()
+  await assert.rejects(deleteAccount({ fs, auth, uid: 'eli' }), { status: 409 })
+  assert.ok((await fs.doc('users/eli').get()).exists)
+  assert.deepEqual(auth.deleted, [])
 })

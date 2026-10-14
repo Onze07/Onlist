@@ -178,3 +178,11 @@ test('categorias: sugestão pelo nome do produto (nomes reais de nota)', () => {
 test('categorias: ordem do mercado e categoria antiga não some', () => {
   assert.deepEqual(orderCategories(['Outros', 'Farmácia', 'Hortifruti', 'Frios']), ['Hortifruti', 'Farmácia', 'Frios', 'Outros'])
 })
+
+test('id da compra: mesmo carrinho = mesmo id, qualquer ordem', async () => {
+  const { purchaseId } = await import('../src/lib/purchaseId.js')
+  assert.equal(purchaseId('l1', ['b', 'a']), purchaseId('l1', ['a', 'b']))
+  assert.notEqual(purchaseId('l1', ['a', 'b']), purchaseId('l1', ['a', 'c']))
+  assert.notEqual(purchaseId('l1', ['a']), purchaseId('l2', ['a']))
+  assert.match(purchaseId('l1', ['a']), /^c_[0-9a-z]+$/)
+})

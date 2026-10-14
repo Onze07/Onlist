@@ -45,6 +45,11 @@ service cloud.firestore {
       allow update: if false;
     }
 
+    // Troca de família em andamento: só o servidor (/api/family) lê e grava
+    match /moves/{uid} {
+      allow read, write: if false;
+    }
+
     // Feedback: só pelo servidor (/api/feedback), que valida, limita e avisa por e-mail
     match /feedback/{id} {
       allow read, write: if false;

@@ -252,6 +252,11 @@ test('usuário apaga o próprio perfil de usuário', async () => {
   await assertSucceeds(deleteDoc(doc(as('bob'), 'users/bob')))
 })
 
+test('moves: troca de família pendente só pelo servidor', async () => {
+  await assertFails(setDoc(doc(as('bob'), 'moves/bob'), { from: 'outra', owner: true, mode: 'merge' }))
+  await assertFails(getDoc(doc(as('bob'), 'moves/bob')))
+})
+
 test('feedback: só pelo servidor (app não grava nem lê)', async () => {
   await assertFails(setDoc(doc(as('bob'), 'feedback/f1'), { uid: 'bob', message: 'Ótimo app' }))
   await assertFails(getDoc(doc(as('bob'), 'feedback/f1')))
