@@ -5,7 +5,7 @@ import { getAuth } from 'firebase-admin/auth'
 import { logError } from './_lib/errlog.js'
 import { getFirestore, FieldValue } from 'firebase-admin/firestore'
 import { getMessaging } from 'firebase-admin/messaging'
-import { planNotification } from './_lib/notify-core.js'
+import { planNotification, cooldownFor } from './_lib/notify-core.js'
 
 function app() {
   if (getApps().length) return getApps()[0]
@@ -44,6 +44,17 @@ export default async function handler(req, res) {
     const plan = await planNotification({ db, uid, body })
     if (plan.status !== 200) return res.status(plan.status).json({ error: plan.error })
 
+    // Reserva o envio numa transação antes de mandar: vários toques ao mesmo tempo não passam juntos
+    const logRef = firestore.doc(plan.logPath)
+    const reserved = await firestore.runTransaction(async tx => {
+      const snap = await tx.get(logRef)
+      const last = snap.exists ? snap.data()[body.type] || 0 : 0
+      if (Date.now() - last < cooldownFor(body.type)) return false
+      tx.set(logRef, { [body.type]: Date.now() }, { merge: true })
+      return true
+    })
+    if (!reserved) return res.status(429).json({ error: 'Aviso enviado há pouco. Aguarde um instante.' })
+
     let sent = 0
     if (plan.tokens.length) {
       const result = await getMessaging().sendEachForMulticast({
@@ -64,7 +75,6 @@ export default async function handler(req, res) {
         firestore.doc(`users/${owner}`).update({ fcmTokens: FieldValue.arrayRemove(...tokens) }).catch(() => {})))
     }
 
-    await firestore.doc(plan.logPath).set({ [body.type]: Date.now() }, { merge: true })
     return res.status(200).json({ sent, targets: plan.targets.length, withoutDevice: plan.withoutDevice })
   } catch (e) {
     console.error('notify', e)

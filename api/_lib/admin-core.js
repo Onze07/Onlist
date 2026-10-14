@@ -13,7 +13,7 @@ export class AdminError extends Error {
 export function isAdminEmail(token, envValue = process.env.ADMIN_EMAILS) {
   const list = String(envValue || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
   const email = String(token?.email || '').toLowerCase()
-  return !!email && token?.email_verified !== false && list.includes(email)
+  return !!email && token?.email_verified === true && list.includes(email)
 }
 
 const DAY = 86400000
@@ -125,7 +125,6 @@ export async function overview({ fs, auth, now = Date.now() }) {
       usersNoFamily: users.filter(u => !inFamily.has(u.uid)).length,
       families: families.length,
       familiesWithPurchase: families.filter(f => f.purchases > 0).length,
-      familiesBuying30: families.filter(f => f.purchases30 > 0).length,
       familiesBuying30: families.filter(f => f.purchases30 > 0).length,
       active7: active(7),
       active30: active(30),

@@ -195,4 +195,21 @@ test('consulta: só endereços oficiais .gov.br (inclusive os que voltam do app)
   assert.equal(isGovUrl('file:///etc/passwd'), false)
   assert.equal(isGovUrl('http://user:pass@nfce.sefin.ro.gov.br/'), false)
   assert.equal(isGovUrl(undefined), false)
+  assert.equal(isGovUrl('https://nfce.sefin.ro.gov.br:8443/'), false) // porta explícita
+})
+
+test('sessão do captcha: assinada, presa ao usuário e com validade', async () => {
+  const { sealSession, openSession } = await import('../api/nfce.js')
+  const key = Buffer.alloc(32, 7)
+  const t0 = Date.parse('2026-10-14T12:00:00Z')
+  const s = sealSession({ csrf: 'x', action: 'https://nfce.sefin.ro.gov.br/a' }, 'ana', t0, key)
+  assert.equal(openSession(s, 'ana', t0 + 60_000, key).csrf, 'x')
+  assert.equal(openSession(s, 'leo', t0 + 60_000, key), null)            // outro usuário
+  assert.equal(openSession(s, 'ana', t0 + 16 * 60_000, key), null)       // vencida
+  assert.equal(openSession(s, 'ana', t0, Buffer.alloc(32, 8)), null)     // outra chave
+  const [payload, sig] = s.split('.')
+  const forged = Buffer.from(JSON.stringify({ action: 'http://169.254.169.254/', uid: 'ana', exp: t0 + 1e9 })).toString('base64url')
+  assert.equal(openSession(`${forged}.${sig}`, 'ana', t0, key), null)    // conteúdo trocado
+  assert.equal(openSession(payload, 'ana', t0, key), null)               // sem assinatura
+  assert.equal(openSession(undefined, 'ana', t0, key), null)
 })

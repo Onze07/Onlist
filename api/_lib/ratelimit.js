@@ -22,8 +22,8 @@ export function waitText(sec) {
   return h === 1 ? '1 hora' : `${h} horas`
 }
 
-// Conta uma chamada; passou do limite na janela atual -> RateLimitError
-export async function hit(fs, key, { limit, windowSec, message = 'Muitas tentativas seguidas.' }, now = Date.now()) {
+// Conta uma chamada (ou `cost` unidades); passou do limite na janela atual -> RateLimitError
+export async function hit(fs, key, { limit, windowSec, message = 'Muitas tentativas seguidas.', cost = 1 }, now = Date.now()) {
   const ref = fs.collection('rateLimits').doc(docId(key))
   await fs.runTransaction(async tx => {
     const snap = await tx.get(ref)
@@ -31,12 +31,12 @@ export async function hit(fs, key, { limit, windowSec, message = 'Muitas tentati
     const start = d.windowStart?.toMillis?.() ?? 0
     const fresh = now - start >= windowSec * 1000
     const count = fresh ? 0 : d.count || 0
-    if (count >= limit) {
+    if (count + cost > limit) {
       const retry = Math.ceil((start + windowSec * 1000 - now) / 1000)
       throw new RateLimitError(`${message} Tente de novo em ${waitText(retry)}.`, retry)
     }
     tx.set(ref, {
-      count: count + 1,
+      count: count + cost,
       windowStart: fresh ? Timestamp.fromMillis(now) : d.windowStart,
       expiresAt: Timestamp.fromMillis(now + windowSec * 1000 * 2),
     }, { merge: true })

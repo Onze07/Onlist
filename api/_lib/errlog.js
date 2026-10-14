@@ -9,8 +9,8 @@ const KEEP_DAYS = 30
 // Nada de dados pessoais: CPF mascarado, imagens em base64 removidas, tamanho limitado
 export function sanitize(text, max = 2000) {
   return String(text ?? '')
-    .replace(/\d{3}\.\d{3}\.\d{3}-\d{2}/g, '[cpf]')
-    .replace(/\b\d{11}\b/g, '[cpf]')
+    // CPF em qualquer formato: 000.000.000-00, 000 000 000 00, 00000000000 (sem pegar pedaço da chave de 44 dígitos)
+    .replace(/(?<!\d)\d{3}[\s.]?\d{3}[\s.]?\d{3}[\s-]?\d{2}(?!\d)/g, '[cpf]')
     .replace(/base64,[A-Za-z0-9+/=]+/g, 'base64,[img]')
     .replace(/Bearer\s+[\w.-]+/gi, 'Bearer [token]')
     .slice(0, max)

@@ -118,6 +118,7 @@ test('só e-mails da lista de admins entram', () => {
   assert.equal(isAdminEmail({ email: 'ana@x.com', email_verified: true }, env), false)
   assert.equal(isAdminEmail({ email: 'outro@x.com', email_verified: false }, env), false)
   assert.equal(isAdminEmail({ email: 'assessoria@onze07.com' }, ''), false)
+  assert.equal(isAdminEmail({ email: 'assessoria@onze07.com' }, env), false) // sem e-mail verificado
 })
 
 test('suporte: mensagem pelo servidor só aceita família de quem é membro', async () => {
@@ -155,6 +156,9 @@ import { logError, listErrors, clearErrorGroup, sanitize, fingerprint } from '..
 
 test('erros: sem dados pessoais e mesma falha no mesmo grupo', () => {
   assert.equal(sanitize('CPF 013.586.362-73 e 01358636273'), 'CPF [cpf] e [cpf]')
+  assert.equal(sanitize('CPF 013 586 362 73.'), 'CPF [cpf].')
+  const chave = '11260904123456000189650010000012341000012345'
+  assert.equal(sanitize(`chave ${chave}`), `chave ${chave}`) // chave de 44 dígitos fica
   assert.equal(sanitize('img base64,AAAA== fim'), 'img base64,[img] fim')
   assert.equal(fingerprint({ source: 'nfce', kind: 'layout', message: 'Nota 123 falhou' }), fingerprint({ source: 'nfce', kind: 'layout', message: 'Nota 456 falhou' }))
   assert.notEqual(fingerprint({ source: 'app', kind: 'x', message: 'a' }), fingerprint({ source: 'nfce', kind: 'x', message: 'a' }))

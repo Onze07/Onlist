@@ -24,7 +24,8 @@ export default async function handler(req, res) {
     const items = (Array.isArray(body.errors) ? body.errors : [body]).slice(0, 20)
     const fs = getFirestore()
     // Acima do limite, descarta em silêncio (o app não precisa saber)
-    try { await hit(fs, `log_${token.uid}`, { limit: 30, windowSec: 3600 }) } catch { return res.status(204).end() }
+    // Conta cada registro, não cada chamada: no máximo 60 por hora por pessoa
+    try { await hit(fs, `log_${token.uid}`, { limit: 60, windowSec: 3600, cost: items.length }) } catch { return res.status(204).end() }
     await Promise.all(items.map(e => logError(fs, {
       source: 'app',
       kind: e.kind,

@@ -2,6 +2,7 @@
 export const TYPES = ['list', 'shopping']
 const LIST_COOLDOWN_MS = 60 * 1000
 const SHOPPING_COOLDOWN_MS = 30 * 60 * 1000
+export const cooldownFor = type => (type === 'list' ? LIST_COOLDOWN_MS : SHOPPING_COOLDOWN_MS)
 
 function firstName(name) {
   return String(name || 'Alguém').trim().split(/\s+/)[0]

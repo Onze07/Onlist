@@ -34,8 +34,9 @@ export default async function handler(req, res) {
     // O e-mail é um extra: se falhar, a mensagem já está salva e aparece no painel
     const to = String(process.env.SUPPORT_EMAIL_TO || process.env.ADMIN_EMAILS || '')
       .split(',').map(s => s.trim()).filter(Boolean)
-    const host = req.headers['x-forwarded-host'] || req.headers.host
-    const mail = supportEmail(fb, `https://${host}/admin`)
+    // Endereço fixo quando configurado (APP_URL); o cabeçalho Host vem de quem chama
+    const base = (process.env.APP_URL || `https://${req.headers['x-forwarded-host'] || req.headers.host}`).replace(/\/$/, '')
+    const mail = supportEmail(fb, `${base}/admin`)
     const email = await sendEmail({
       apiKey: process.env.RESEND_API_KEY,
       from: process.env.RESEND_FROM || 'Onlist <onboarding@resend.dev>',
