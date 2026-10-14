@@ -4,6 +4,7 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
 import { getFirestore } from 'firebase-admin/firestore'
 import { logError } from './_lib/errlog.js'
+import { hit } from './_lib/ratelimit.js'
 
 function app() {
   if (getApps().length) return getApps()[0]
@@ -22,6 +23,8 @@ export default async function handler(req, res) {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {}
     const items = (Array.isArray(body.errors) ? body.errors : [body]).slice(0, 20)
     const fs = getFirestore()
+    // Acima do limite, descarta em silêncio (o app não precisa saber)
+    try { await hit(fs, `log_${token.uid}`, { limit: 30, windowSec: 3600 }) } catch { return res.status(204).end() }
     await Promise.all(items.map(e => logError(fs, {
       source: 'app',
       kind: e.kind,

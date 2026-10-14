@@ -3,7 +3,8 @@ import { after, before, beforeEach, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { initializeApp, deleteApp } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
-import { switchFamily, mergePriceHistory, mergeCatalogItem } from '../api/_lib/family-core.js'
+import { switchFamily, joinWithCode, mergePriceHistory, mergeCatalogItem } from '../api/_lib/family-core.js'
+import { hit, RateLimitError } from '../api/_lib/ratelimit.js'
 
 let app, fs
 
@@ -18,6 +19,7 @@ beforeEach(async () => {
   await fs.recursiveDelete(fs.collection('families'))
   await fs.recursiveDelete(fs.collection('familyCodes'))
   await fs.recursiveDelete(fs.collection('users'))
+  await fs.recursiveDelete(fs.collection('rateLimits'))
 
   // Família do Élinton (destino), com Leo como membro
   await fs.doc('families/el').set({ code: 'ELI234', createdBy: 'eli', members: ['eli', 'leo'], admins: [] })
@@ -129,4 +131,29 @@ test('mesclar históricos: sem repetição e só os mais recentes', () => {
   const m = mergeCatalogItem({ name: 'Arroz', unit: '' }, { name: 'arroz', unit: 'kg', category: 'X' })
   assert.equal(m.name, 'Arroz')
   assert.equal(m.unit, 'kg')
+})
+
+test('código errado: 5 tentativas livres, depois bloqueio que dobra; acertar zera', async () => {
+  await fs.doc('users/zed').set({})
+  const try_ = (code, now) => joinWithCode({ fs, uid: 'zed', profile: { name: 'Zed' }, code, mode: 'fresh', now })
+  const t0 = Date.parse('2026-10-14T12:00:00Z')
+  for (let i = 0; i < 4; i++) await assert.rejects(try_('ZZZ999', t0), { status: 404 })
+  await assert.rejects(try_('ZZZ999', t0), { status: 429 })             // 5º erro: bloqueia 1 min
+  await assert.rejects(try_('ELI234', t0 + 30_000), { status: 429 })     // bloqueado até com o código certo
+  await assert.rejects(try_('ZZZ999', t0 + 61_000), { status: 429 })     // 6º erro: bloqueia 2 min
+  const blocked = (await fs.doc('rateLimits/join_zed').get()).data()
+  assert.equal(blocked.fails, 6)
+  assert.equal(blocked.blockedUntil.toMillis(), t0 + 61_000 + 120_000)
+  const ok = await try_('ELI234', t0 + 61_000 + 121_000)
+  assert.equal(ok.familyId, 'el')
+  assert.equal((await fs.doc('rateLimits/join_zed').get()).exists, false)
+})
+
+test('limite por janela: passa do limite, espera a janela virar', async () => {
+  const opts = { limit: 3, windowSec: 60, message: 'Calma.' }
+  const t0 = Date.parse('2026-10-14T12:00:00Z')
+  for (let i = 0; i < 3; i++) await hit(fs, 'nfce_ana', opts, t0 + i)
+  await assert.rejects(hit(fs, 'nfce_ana', opts, t0 + 10_000), e => e instanceof RateLimitError && /Calma\. Tente de novo em 50 segundos/.test(e.message))
+  await hit(fs, 'nfce_ana', opts, t0 + 61_000)
+  await hit(fs, 'nfce_eli', opts, t0 + 10_000) // cada usuário tem o seu limite
 })

@@ -6,6 +6,7 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
 import { getFirestore } from 'firebase-admin/firestore'
 import { logError } from './_lib/errlog.js'
+import { RateLimitError, hit } from './_lib/ratelimit.js'
 import { parseNfce, isCaptchaPage, extractCaptcha, validNfceUrl, keyInfo, classifyPage, notFoundMessage, parseAccessKey, keyConsultUrls } from './_lib/nfce-parse.js'
 
 const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
@@ -141,6 +142,8 @@ export default async function handler(req, res) {
     let token
     try { token = await getAuth().verifyIdToken(idToken) } catch { return res.status(401).json({ error: 'Faça login novamente' }) }
     ctx = { fs: getFirestore(), uid: token.uid, email: token.email }
+    // Protege o servidor de ser bloqueado pela SEFAZ por excesso de consultas
+    await hit(ctx.fs, `nfce_${token.uid}`, { limit: 60, windowSec: 3600, message: 'Muitas consultas de nota seguidas.' })
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {})
 
@@ -196,6 +199,7 @@ export default async function handler(req, res) {
 
     return res.status(400).json({ error: 'Pedido inválido' })
   } catch (e) {
+    if (e instanceof RateLimitError) return res.status(429).json({ error: e.message, retryAfter: e.retryAfter })
     console.error('nfce', e)
     const timeout = e.name === 'TimeoutError' || e.name === 'AbortError'
     await logError(ctx?.fs, {

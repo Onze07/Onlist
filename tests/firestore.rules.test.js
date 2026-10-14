@@ -52,28 +52,16 @@ test('não é possível listar códigos', async () => {
   await assertFails(getDocs(collection(as('mallory'), 'familyCodes')))
 })
 
-test('entrar com código válido funciona', async () => {
+test('ninguém lê código de convite pelo app (nem quem é membro)', async () => {
+  await assertFails(getDoc(doc(as('mallory'), 'familyCodes/ABC234')))
+  await assertFails(getDoc(doc(as('alice'), 'familyCodes/ABC234')))
+})
+
+test('entrar pelo app, mesmo sabendo o código, não é mais possível (só pelo servidor)', async () => {
   const db = as('bob')
   const batch = writeBatch(db)
   batch.set(doc(db, 'users/bob'), { familyId: 'fam1', joinCode: 'ABC234' })
   batch.update(doc(db, 'families/fam1'), { members: arrayUnion('bob') })
-  await assertSucceeds(batch.commit())
-  await assertSucceeds(getDoc(doc(db, 'families/fam1/lists/l1/entries/e1')))
-})
-
-test('entrar sem saber o código falha', async () => {
-  const db = as('mallory')
-  const batch = writeBatch(db)
-  batch.set(doc(db, 'users/mallory'), { familyId: 'fam1', joinCode: 'ZZZZZZ' })
-  batch.update(doc(db, 'families/fam1'), { members: arrayUnion('mallory') })
-  await assertFails(batch.commit())
-})
-
-test('entrar não pode adicionar outra pessoa', async () => {
-  const db = as('mallory')
-  const batch = writeBatch(db)
-  batch.set(doc(db, 'users/mallory'), { familyId: 'fam1', joinCode: 'ABC234' })
-  batch.update(doc(db, 'families/fam1'), { members: arrayUnion('mallory', 'eve') })
   await assertFails(batch.commit())
 })
 
@@ -113,13 +101,6 @@ test('usuário só acessa o próprio perfil', async () => {
 
 // --- Gestão de acesso ---
 
-const join = (uid, code = 'ABC234') => {
-  const db = as(uid)
-  const batch = writeBatch(db)
-  batch.set(doc(db, `users/${uid}`), { familyId: 'fam1', joinCode: code })
-  batch.update(doc(db, 'families/fam1'), { members: arrayUnion(uid) })
-  return batch.commit()
-}
 
 test('criar família com plano é bloqueado', async () => {
   await assertFails(setDoc(doc(as('carol'), 'families/fam9'), {
@@ -127,21 +108,7 @@ test('criar família com plano é bloqueado', async () => {
   }))
 })
 
-test('limite de vagas: entrar falha quando o plano está cheio', async () => {
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    await updateDoc(doc(ctx.firestore(), 'families/fam1'), { plan: { seats: 3 } })
-  })
-  await assertFails(join('bob'))
-})
 
-test('limite de vagas padrão (sem plano) é 20', async () => {
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    const members = Array.from({ length: 19 }, (_, i) => `m${i}`)
-    await updateDoc(doc(ctx.firestore(), 'families/fam1'), { members: ['alice', ...members.slice(1)] })
-  })
-  await assertSucceeds(join('bob'))
-  await assertFails(join('carl'))
-})
 
 test('dono passa a posse para um membro e vira admin', async () => {
   await assertSucceeds(updateDoc(doc(as('alice'), 'families/fam1'), { createdBy: 'mia', admins: ['adam', 'alice'] }))
@@ -218,7 +185,6 @@ test('admin gera novo código', async () => {
   batch.update(doc(db, 'families/fam1'), { code: 'NEW567' })
   batch.delete(doc(db, 'familyCodes/ABC234'))
   await assertSucceeds(batch.commit())
-  await assertFails(join('bob', 'ABC234'))
 })
 
 test('membro comum não troca código', async () => {
@@ -251,14 +217,6 @@ test('admin apaga perfil de quem removeu', async () => {
   await assertSucceeds(batch.commit())
 })
 
-test('entrar já gravando o perfil', async () => {
-  const db = as('bob')
-  const batch = writeBatch(db)
-  batch.set(doc(db, 'users/bob'), { familyId: 'fam1', joinCode: 'ABC234' })
-  batch.update(doc(db, 'families/fam1'), { members: arrayUnion('bob') })
-  batch.set(doc(db, 'families/fam1/profiles/bob'), { name: 'Bob' })
-  await assertSucceeds(batch.commit())
-})
 
 test('família legada sem admins: dono gerencia normalmente', async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -294,12 +252,9 @@ test('usuário apaga o próprio perfil de usuário', async () => {
   await assertSucceeds(deleteDoc(doc(as('bob'), 'users/bob')))
 })
 
-test('feedback: envia o próprio, não lê nem forja', async () => {
-  await assertSucceeds(setDoc(doc(as('bob'), 'feedback/f1'), { uid: 'bob', message: 'Ótimo app' }))
-  await assertFails(setDoc(doc(as('bob'), 'feedback/f2'), { uid: 'alice', message: 'forjado' }))
-  await assertFails(setDoc(doc(as('bob'), 'feedback/f3'), { uid: 'bob', message: '' }))
+test('feedback: só pelo servidor (app não grava nem lê)', async () => {
+  await assertFails(setDoc(doc(as('bob'), 'feedback/f1'), { uid: 'bob', message: 'Ótimo app' }))
   await assertFails(getDoc(doc(as('bob'), 'feedback/f1')))
-  await assertFails(setDoc(doc(env.unauthenticatedContext().firestore(), 'feedback/f4'), { uid: 'x', message: 'oi' }))
 })
 
 // --- Presença (modo mercado) ---

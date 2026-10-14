@@ -1,6 +1,7 @@
 // Troca de família ("entrar em outra família"), com opção de levar os dados.
 // Recebe o Firestore do Admin SDK para poder ser testado no emulador.
 import { FieldValue } from 'firebase-admin/firestore'
+import { assertNotBlocked, registerFail, resetFails, RateLimitError, waitText } from './ratelimit.js'
 
 export const DEFAULT_SEATS = 20
 const PRICE_HISTORY_MAX = 60
@@ -169,4 +170,22 @@ export async function switchFamily({ fs, uid, profile, code, mode }) {
     }
   }
   return { familyId: newFid, merged: stats }
+}
+
+// Entrar com código passando pelo limite de tentativas: código errado conta como erro e,
+// a partir do 5º, bloqueia por 1 min, 2, 4, 8... Acertar zera a contagem.
+export async function joinWithCode({ fs, uid, profile, code, mode, now = Date.now() }) {
+  const key = `join_${uid}`
+  await assertNotBlocked(fs, key, now)
+  try {
+    const result = await switchFamily({ fs, uid, profile, code, mode })
+    await resetFails(fs, key)
+    return result
+  } catch (e) {
+    const wrongCode = e instanceof FamilyError && (e.status === 404 || e.message === 'Código inválido')
+    if (!wrongCode) throw e
+    const { blockSec } = await registerFail(fs, key, undefined, now)
+    if (blockSec) throw new RateLimitError(`Código não encontrado. Por segurança, aguarde ${waitText(blockSec)} antes de tentar de novo.`, blockSec)
+    throw e
+  }
 }

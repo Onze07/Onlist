@@ -12,11 +12,14 @@ function Center({ children }) {
 function AdminRoot() {
   const [user, setUser] = useState(undefined)
   const [allowed, setAllowed] = useState(undefined)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(() => {
+    try { const n = sessionStorage.getItem('adminNotice'); sessionStorage.removeItem('adminNotice'); return n || '' } catch { return '' }
+  })
 
   useEffect(() => onAuthStateChanged(adminAuth, u => {
     setUser(u)
     setAllowed(undefined)
+    if (!u) try { const n = sessionStorage.getItem('adminNotice'); if (n) { setError(n); sessionStorage.removeItem('adminNotice') } } catch { /* ignora */ }
     if (u) adminApi('whoami').then(r => setAllowed(!!r.admin)).catch(e => { setError(e.message); setAllowed(false) })
   }), [])
 

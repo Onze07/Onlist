@@ -178,3 +178,23 @@ test('erros: grava, agrupa por falha, conta pessoas e resolve', async () => {
   assert.equal((await clearErrorGroup(fs, nf.fp)).deleted, 2)
   assert.equal((await listErrors(fs, { days: 1 })).groups.length, 1)
 })
+
+// --- Segurança do painel ---
+import { isRecentLogin, audit, listAudit } from '../api/_lib/admin-core.js'
+
+test('painel: login vale 12 horas', () => {
+  const now = Date.parse('2026-10-14T12:00:00Z')
+  assert.equal(isRecentLogin({ auth_time: now / 1000 - 3600 }, now), true)
+  assert.equal(isRecentLogin({ auth_time: now / 1000 - 13 * 3600 }, now), false)
+  assert.equal(isRecentLogin({}, now), false)
+})
+
+test('painel: histórico das ações do admin, mais recente primeiro', async () => {
+  await fs.recursiveDelete(fs.collection('adminAudit'))
+  await audit(fs, { email: 'eli@x.com', action: 'Plano alterado', target: 'f1', details: { name: 'Fundador', price: 0 } })
+  await audit(fs, { email: 'eli@x.com', action: 'Suporte: resolvido', target: 'fb1' })
+  const list = await listAudit({ fs })
+  assert.equal(list.length, 2)
+  assert.equal(list[0].action, 'Suporte: resolvido')
+  assert.equal(list[1].details.name, 'Fundador')
+})

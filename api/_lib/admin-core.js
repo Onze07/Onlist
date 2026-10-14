@@ -250,3 +250,35 @@ export async function setFeedbackStatus({ fs, id, status, note, reply, adminEmai
   }
   return { ok: true, notified }
 }
+
+// --- Segurança do painel ---
+
+// Login no painel vale 12 horas (auth_time = quando a pessoa entrou com o Google, em segundos)
+export const ADMIN_SESSION_SEC = 12 * 3600
+export function isRecentLogin(token, nowMs = Date.now()) {
+  const authTime = Number(token?.auth_time) || 0
+  return authTime > 0 && nowMs / 1000 - authTime <= ADMIN_SESSION_SEC
+}
+
+// Registro de ações do admin (quem fez o quê e quando). Só o servidor grava e lê.
+export async function audit(fs, { email, action, target, details }) {
+  try {
+    await fs.collection('adminAudit').add({
+      email: email || null,
+      action,
+      target: target || null,
+      details: details ? JSON.parse(JSON.stringify(details)) : null,
+      at: FieldValue.serverTimestamp(),
+    })
+  } catch (e) {
+    console.error('audit', e)
+  }
+}
+
+export async function listAudit({ fs, limit = 100 }) {
+  const snap = await fs.collection('adminAudit').orderBy('at', 'desc').limit(limit).get()
+  return snap.docs.map(d => {
+    const a = d.data()
+    return { id: d.id, at: iso(a.at), email: a.email, action: a.action, target: a.target, details: a.details }
+  })
+}

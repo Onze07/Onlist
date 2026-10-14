@@ -23,11 +23,17 @@ function generateCode() {
   return Array.from(bytes, b => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('')
 }
 
-async function generateFreeCode() {
+// O app não consulta códigos (impede testar códigos em massa). Se o sorteado já existir,
+// a gravação é recusada pelas regras e outro código é tentado.
+async function withFreeCode(write) {
   for (let i = 0; i < 5; i++) {
-    const candidate = generateCode()
-    const existing = await getDoc(doc(db, 'familyCodes', candidate))
-    if (!existing.exists()) return candidate
+    const code = generateCode()
+    try {
+      await write(code)
+      return code
+    } catch (e) {
+      if (e.code !== 'permission-denied') throw e
+    }
   }
   throw new Error('Não foi possível gerar um código. Tente novamente.')
 }
@@ -132,43 +138,29 @@ export function FamilyProvider({ children }) {
   const seats = family?.plan?.seats ?? DEFAULT_SEATS
 
   async function createFamily(name) {
-    const code = await generateFreeCode()
     const familyRef = doc(collection(db, 'families'))
-    const batch = writeBatch(db)
-    batch.set(familyRef, {
-      name: name?.trim() || 'Minha família',
-      code, createdBy: user.uid, members: [user.uid], admins: [],
-      createdAt: serverTimestamp(),
+    const code = await withFreeCode(code => {
+      const batch = writeBatch(db)
+      batch.set(familyRef, {
+        name: name?.trim() || 'Minha família',
+        code, createdBy: user.uid, members: [user.uid], admins: [],
+        createdAt: serverTimestamp(),
+      })
+      batch.set(doc(db, 'familyCodes', code), { familyId: familyRef.id })
+      // merge: não apagar aceite dos termos, aparelhos de aviso etc.
+      batch.set(doc(db, 'users', user.uid), { familyId: familyRef.id, email: user.email }, { merge: true })
+      batch.set(doc(db, 'families', familyRef.id, 'profiles', user.uid), { ...profileData(user), joinedAt: serverTimestamp() })
+      return batch.commit()
     })
-    batch.set(doc(db, 'familyCodes', code), { familyId: familyRef.id })
-    // merge: não apagar aceite dos termos, aparelhos de aviso etc.
-    batch.set(doc(db, 'users', user.uid), { familyId: familyRef.id, email: user.email }, { merge: true })
-    batch.set(doc(db, 'families', familyRef.id, 'profiles', user.uid), { ...profileData(user), joinedAt: serverTimestamp() })
-    await batch.commit()
     setFamilyId(familyRef.id)
     return code
   }
 
+  // Entrar com código: pelo servidor, que limita as tentativas erradas
   async function joinFamily(rawCode) {
     const code = rawCode.trim().toUpperCase()
-    const codeSnap = await getDoc(doc(db, 'familyCodes', code))
-    if (!codeSnap.exists()) throw new Error('Código não encontrado')
-    const fid = codeSnap.data().familyId
-
-    // joinCode prova para as regras do Firestore que o usuário conhece o código
-    const batch = writeBatch(db)
-    batch.set(doc(db, 'users', user.uid), { familyId: fid, email: user.email, joinCode: code }, { merge: true })
-    batch.update(doc(db, 'families', fid), { members: arrayUnion(user.uid) })
-    batch.set(doc(db, 'families', fid, 'profiles', user.uid), { ...profileData(user), joinedAt: serverTimestamp() })
-    try {
-      await batch.commit()
-    } catch (e) {
-      if (e.code === 'permission-denied') {
-        throw new Error('Não foi possível entrar. O plano desta família pode estar com todas as vagas ocupadas.')
-      }
-      throw e
-    }
-    setFamilyId(fid)
+    const result = await apiPost('/api/family', { action: 'switch', code, mode: 'fresh' })
+    setFamilyId(result.familyId)
   }
 
   async function renameFamily(name) {
@@ -177,13 +169,13 @@ export function FamilyProvider({ children }) {
   }
 
   async function regenerateCode() {
-    const code = await generateFreeCode()
-    const batch = writeBatch(db)
-    batch.set(doc(db, 'familyCodes', code), { familyId: family.id })
-    batch.update(doc(db, 'families', family.id), { code })
-    if (family.code) batch.delete(doc(db, 'familyCodes', family.code))
-    await batch.commit()
-    return code
+    return withFreeCode(code => {
+      const batch = writeBatch(db)
+      batch.set(doc(db, 'familyCodes', code), { familyId: family.id })
+      batch.update(doc(db, 'families', family.id), { code })
+      if (family.code) batch.delete(doc(db, 'familyCodes', family.code))
+      return batch.commit()
+    })
   }
 
   async function removeMember(uid) {

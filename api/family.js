@@ -4,7 +4,8 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
 import { logError } from './_lib/errlog.js'
 import { getFirestore } from 'firebase-admin/firestore'
-import { FamilyError, switchFamily } from './_lib/family-core.js'
+import { FamilyError, joinWithCode } from './_lib/family-core.js'
+import { RateLimitError, hit } from './_lib/ratelimit.js'
 
 export const config = { maxDuration: 60 }
 
@@ -30,8 +31,10 @@ export default async function handler(req, res) {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {}
     if (body.action !== 'switch') return res.status(400).json({ error: 'Pedido inválido' })
 
-    const result = await switchFamily({
-      fs: getFirestore(),
+    const fs = getFirestore()
+    await hit(fs, `family_${token.uid}`, { limit: 20, windowSec: 3600, message: 'Muitas tentativas de entrar em família.' })
+    const result = await joinWithCode({
+      fs,
       uid: token.uid,
       profile: { name: token.name, email: token.email, photoURL: token.picture },
       code: body.code,
@@ -40,6 +43,7 @@ export default async function handler(req, res) {
     return res.status(200).json(result)
   } catch (e) {
     if (e instanceof FamilyError) return res.status(e.status).json({ error: e.message })
+    if (e instanceof RateLimitError) return res.status(429).json({ error: e.message, retryAfter: e.retryAfter })
     console.error('family', e)
     await logError(getApps().length ? getFirestore() : null, { source: 'server', kind: 'exception', message: `/api/family: ${e.message}`, detail: e.stack, path: '/api/family' })
     return res.status(500).json({ error: 'Não foi possível trocar de família. Tente de novo.' })
