@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
-import { collection, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc } from 'firebase/firestore'
+import { collection, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
-import { fmtDate, normalizePriceHistory } from '../lib/firestore'
+import { fmtDate, normalizePriceHistory, queueWrite } from '../lib/firestore'
 import { latestByMarket } from '../lib/prices'
 import MoneyInput from '../components/MoneyInput'
 import { IconEdit, IconTrash, IconChevronDown, IconChevronRight, IconTrendingUp } from '../components/Icon'
 import { UNITS, UNIT_LABELS } from '../lib/nfceMatch'
 import { CATEGORIES, orderCategories } from '../lib/categories'
+import { toast } from '../lib/feedback'
 
 
 function fmt(n) {
@@ -48,14 +49,19 @@ export default function Catalog({ onAddToList }) {
   }
   const groupOrder = orderCategories(Object.keys(groups))
 
-  async function saveEdit(id, data) {
-    await updateDoc(doc(db, 'families', familyId, 'catalog', id), data)
+  function saveEdit(id, data) {
+    queueWrite(updateDoc(doc(db, 'families', familyId, 'catalog', id), data), 'salvar o produto')
     setEditingId(null)
   }
 
-  async function handleDelete(item) {
-    if (!confirm(`Remover "${item.name}" do catálogo?`)) return
-    await deleteDoc(doc(db, 'families', familyId, 'catalog', item.id))
+  // Remove na hora e oferece "Desfazer" (regrava o produto com o histórico de preços)
+  function handleDelete(item) {
+    const { id, ...data } = item
+    const ref = doc(db, 'families', familyId, 'catalog', id)
+    queueWrite(deleteDoc(ref), 'remover o produto')
+    toast(`"${item.name}" removido do catálogo.`, {
+      action: { label: 'Desfazer', run: () => queueWrite(setDoc(ref, data), 'desfazer') },
+    })
   }
 
   function toggleCollapse(cat) {

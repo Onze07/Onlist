@@ -15,19 +15,3 @@ export function useOnline() {
   }, [])
   return online
 }
-
-// Erros de gravação disparados por queueWrite
-export function useWriteErrors() {
-  const [error, setError] = useState(null)
-  useEffect(() => {
-    let timer
-    const fn = e => {
-      setError(e.detail)
-      clearTimeout(timer)
-      timer = setTimeout(() => setError(null), 6000)
-    }
-    window.addEventListener('onlist:write-error', fn)
-    return () => { window.removeEventListener('onlist:write-error', fn); clearTimeout(timer) }
-  }, [])
-  return error
-}

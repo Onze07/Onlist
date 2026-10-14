@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { collection, getDocs, orderBy, query } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
@@ -84,13 +84,19 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
   }
 
   const [categoryError, setCategoryError] = useState(false)
+  const [nameError, setNameError] = useState(false)
+  // Toque duplo em Salvar não cria dois itens
+  const savingRef = useRef(false)
 
-  function handleSave() {
-    if (!form.name.trim()) return
+  async function handleSave() {
+    if (savingRef.current) return
+    if (!form.name.trim()) { setNameError(true); return }
     if (!form.category) { setCategoryError(true); return }
     setCategoryError(false)
     if (isNew && !defaultInCart) lastInCart = inCart
-    onSave({
+    savingRef.current = true
+    try {
+      await onSave({
       name: form.name.trim(),
       obs: (form.obs || '').trim(),
       brand: (form.brand || '').trim(),
@@ -99,7 +105,10 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
       unit: form.unit,
       pricePerUnit: Number(form.pricePerUnit) || 0,
       totalPrice: Number(form.totalPrice) || 0,
-    }, { inCart: isNew && inCart })
+      }, { inCart: isNew && inCart })
+    } finally {
+      savingRef.current = false
+    }
   }
 
   const step = form.unit === 'kg' || form.unit === 'l' ? 0.1 : 1
@@ -118,12 +127,15 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
           <input
             autoFocus
             value={form.name}
-            onChange={e => handleNameChange(e.target.value)}
+            onChange={e => { handleNameChange(e.target.value); setNameError(false) }}
             onKeyDown={e => e.key === 'Enter' && handleSave()}
             placeholder="Nome do item"
+            aria-label="Nome do item"
+            aria-invalid={nameError}
             enterKeyHint="done"
-            className={`w-full text-lg font-semibold px-3 py-2.5 ${field}`}
+            className={`w-full text-lg font-semibold px-3 py-2.5 ${field} ${nameError ? '!border-red-500' : ''}`}
           />
+          {nameError && <p className="text-red-400 text-xs mt-1 px-1">Digite o nome do item</p>}
           {suggestions.length > 0 && (
             <div className="absolute top-full left-0 right-0 bg-gray-800 rounded-xl mt-1 overflow-hidden z-10 shadow-xl border border-gray-700">
               {suggestions.map(s => (
@@ -139,12 +151,12 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
 
         {/* Categoria + unidade */}
         <div className="flex gap-2 mb-2">
-          <select value={form.category} onChange={e => { set('category', e.target.value); setCategoryError(false); setCategoryTouched(true) }}
+          <select aria-label="Categoria" value={form.category} onChange={e => { set('category', e.target.value); setCategoryError(false); setCategoryTouched(true) }}
             className={`flex-1 min-w-0 px-3 py-2.5 text-base ${field} ${categoryError ? '!border-red-500' : ''}`}>
             <option value="">Categoria…</option>
             {CATEGORIES.map(c => <option key={c}>{c}</option>)}
           </select>
-          <select value={form.unit} onChange={e => set('unit', e.target.value)}
+          <select aria-label="Unidade" value={form.unit} onChange={e => set('unit', e.target.value)}
             className={`w-32 px-3 py-2.5 text-base ${field}`}>
             {UNITS.map(u => <option key={u} value={u}>{u} · {UNIT_LABELS[u]}</option>)}
           </select>
@@ -159,11 +171,11 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
           <div>
             <label className="text-gray-500 text-[11px] mb-0.5 block px-1">Qtd</label>
             <div className="flex items-center bg-gray-800 rounded-xl h-10">
-              <button type="button" onClick={() => set('qty', String(Math.max(step, Math.round(((parsePrice(form.qty) || 0) - step) * 10) / 10)).replace('.', ','))}
+              <button type="button" aria-label="Diminuir quantidade" onClick={() => set('qty', String(Math.max(step, Math.round(((parsePrice(form.qty) || 0) - step) * 10) / 10)).replace('.', ','))}
                 className="w-8 h-full text-white text-lg flex-shrink-0">−</button>
-              <input value={form.qty} onChange={e => set('qty', e.target.value)} inputMode="decimal"
+              <input aria-label="Quantidade" value={form.qty} onChange={e => set('qty', e.target.value)} inputMode="decimal"
                 className="w-full min-w-0 bg-transparent text-white text-center outline-none font-semibold text-base" />
-              <button type="button" onClick={() => set('qty', String(Math.round(((parsePrice(form.qty) || 0) + step) * 10) / 10).replace('.', ','))}
+              <button type="button" aria-label="Aumentar quantidade" onClick={() => set('qty', String(Math.round(((parsePrice(form.qty) || 0) + step) * 10) / 10).replace('.', ','))}
                 className="w-8 h-full text-white text-lg flex-shrink-0">+</button>
             </div>
           </div>
@@ -218,8 +230,8 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
           </button>
         </div>
         {onDelete && (
-          <button onClick={() => confirm(`Remover "${form.name}" da lista?`) && onDelete()}
-            className="w-full text-red-400/80 text-sm py-3 mt-1">
+          <button onClick={onDelete}
+            className="w-full min-h-11 text-red-400/80 text-sm py-3 mt-1">
             Remover da lista
           </button>
         )}

@@ -1,11 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import {
-  doc, getDoc, getDocs, setDoc, collection, writeBatch, arrayUnion, arrayRemove,
-  onSnapshot, serverTimestamp, updateDoc, deleteDoc,
+  doc, getDoc, setDoc, collection, writeBatch, arrayUnion, arrayRemove,
+  onSnapshot, serverTimestamp, updateDoc,
 } from 'firebase/firestore'
-import { deleteUser, reauthenticateWithPopup } from 'firebase/auth'
-import { db, googleProvider } from '../firebase'
-import { commitInChunks } from '../lib/firestore'
+import { reauthenticateWithPopup, signOut } from 'firebase/auth'
+import { auth, db, googleProvider } from '../firebase'
 import { useAuth } from './AuthContext'
 import { userPhoto } from '../lib/user'
 import { apiPost } from '../lib/api'
@@ -132,6 +131,14 @@ export function FamilyProvider({ children }) {
     }, () => {})
   }, [family?.id])
 
+  // Troca de família que parou no meio (queda do servidor): o servidor termina sozinho
+  const resumedRef = useRef(false)
+  useEffect(() => {
+    if (!userDoc?.movePending || resumedRef.current) return
+    resumedRef.current = true
+    apiPost('/api/family', { action: 'resume' }).catch(() => { resumedRef.current = false })
+  }, [userDoc?.movePending])
+
   const loading = userLoading || userDoc === undefined || (familyId && family === undefined)
   const isOwner = !!family && family.createdBy === user?.uid
   const isAdmin = isOwner || (!!family && (family.admins || []).includes(user?.uid))
@@ -235,44 +242,18 @@ export function FamilyProvider({ children }) {
   }
 
   // Exclusão de conta (LGPD). Confirma a identidade antes de apagar qualquer coisa.
+  // Exclusão pelo servidor: apaga tudo de uma vez, mesmo se o app fechar no meio
   async function deleteAccount() {
     if (family && isOwner && family.members.length > 1) {
-      throw new Error('Você é o dono da família. Remova os outros membros antes de excluir sua conta.')
+      throw new Error('Você é o dono da família. Passe a posse ou remova os outros membros antes de excluir sua conta.')
     }
     await reauthenticateWithPopup(user, googleProvider)
     deletingRef.current = true
     try {
-      if (family) {
-        const fid = family.id
-        if (isOwner) {
-          const ops = []
-          const lists = await getDocs(collection(db, 'families', fid, 'lists'))
-          for (const list of lists.docs) {
-            const entries = await getDocs(collection(list.ref, 'entries'))
-            entries.docs.forEach(d => ops.push(b => b.delete(d.ref)))
-            ops.push(b => b.delete(list.ref))
-          }
-          for (const sub of ['catalog', 'history', 'mercados', 'profiles', 'presence']) {
-            const snap = await getDocs(collection(db, 'families', fid, sub))
-            snap.docs.forEach(d => ops.push(b => b.delete(d.ref)))
-          }
-          await commitInChunks(ops)
-          const batch = writeBatch(db)
-          if (family.code) batch.delete(doc(db, 'familyCodes', family.code))
-          batch.delete(doc(db, 'families', fid))
-          await batch.commit()
-        } else {
-          const batch = writeBatch(db)
-          batch.delete(doc(db, 'families', fid, 'profiles', user.uid))
-          batch.delete(doc(db, 'families', fid, 'presence', user.uid))
-          batch.update(doc(db, 'families', fid), { members: arrayRemove(user.uid), admins: arrayRemove(user.uid) })
-          await batch.commit()
-        }
-        try { localStorage.removeItem(`lastList_${fid}`) } catch { /* ignora */ }
-      }
-
-      await deleteDoc(doc(db, 'users', user.uid))
-      await deleteUser(user)
+      const fid = family?.id
+      await apiPost('/api/family', { action: 'deleteAccount' }, { freshToken: true })
+      if (fid) { try { localStorage.removeItem(`lastList_${fid}`) } catch { /* ignora */ } }
+      await signOut(auth).catch(() => {})
     } finally {
       deletingRef.current = false
     }

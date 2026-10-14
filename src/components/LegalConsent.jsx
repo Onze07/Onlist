@@ -4,6 +4,7 @@ import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
 import { LEGAL_VERSION } from '../lib/legal'
+import { showError } from '../lib/feedback'
 
 // Aceite obrigatório dos Termos e da Política (primeiro acesso ou nova versão)
 export default function LegalConsent({ updated }) {
@@ -16,7 +17,7 @@ export default function LegalConsent({ updated }) {
     try {
       await updateUserDoc({ legalVersion: LEGAL_VERSION, legalAcceptedAt: serverTimestamp() })
     } catch (e) {
-      alert('Erro: ' + e.message)
+      showError(e, 'salvar seu aceite')
       setBusy(false)
     }
   }

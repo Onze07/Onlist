@@ -15,7 +15,9 @@ import PresenceBanner from '../components/PresenceBanner'
 import NotifySheet from '../components/NotifySheet'
 import NfceReader from '../components/NfceReader'
 import { sendNotify } from '../lib/push'
-import { useOnline, useWriteErrors } from '../lib/useSync'
+import { useOnline } from '../lib/useSync'
+import { ask, toast } from '../lib/feedback'
+import { purchaseId } from '../lib/purchaseId'
 import { usePresence } from '../lib/usePresence'
 import { cheapest } from '../lib/prices'
 import { IconChevronDown, IconCheck, IconPlus, IconX, IconBell, IconScale, IconUndo, IconTrash, IconCalc } from '../components/Icon'
@@ -51,12 +53,10 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   const [saving, setSaving] = useState(false)
   const [pendingSync, setPendingSync] = useState(false)
   const online = useOnline()
-  const writeError = useWriteErrors()
   const othersShopping = usePresence(familyId, user?.uid)
   const presenceWrittenAt = useRef(0)
   const [showNotify, setShowNotify] = useState(false)
   const [showNfce, setShowNfce] = useState(false)
-  const [notice, setNotice] = useState('')
   const finishingRef = useRef(false)
 
   // Load last list: usa a salva neste aparelho, senão a primeira ativa, senão cria a padrão
@@ -212,19 +212,55 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     doCheck(entry, 0)
   }
 
-  function uncheckAll() {
-    if (!confirm(`Desmarcar os ${checked.length} itens do carrinho?`)) return
-    queueWrite(commitInChunks(checked.map(e => b => b.update(entryRef(e.id), { checked: false }))), 'desmarcar itens')
+  async function uncheckAll() {
+    const items = checked
+    if (!await ask({ title: `Desmarcar ${items.length} ${items.length === 1 ? 'item' : 'itens'}?`, message: 'Eles voltam para a lista de pendentes.', confirm: 'Desmarcar' })) return
+    queueWrite(commitInChunks(items.map(e => b => b.update(entryRef(e.id), { checked: false }))), 'desmarcar itens')
+    toast(`${items.length} ${items.length === 1 ? 'item voltou' : 'itens voltaram'} para a lista.`, {
+      action: { label: 'Desfazer', run: () => queueWrite(commitInChunks(items.map(e => b => b.update(entryRef(e.id), { checked: true }))), 'desfazer') },
+    })
   }
 
-  function clearPending() {
-    if (!confirm(`Remover os ${pending.length} itens pendentes?`)) return
-    queueWrite(commitInChunks(pending.map(e => b => b.delete(entryRef(e.id)))), 'limpar itens')
+  // Apaga e oferece "Desfazer": regrava os mesmos documentos (mesmo id, mesmos dados)
+  function removeWithUndo(items, label) {
+    queueWrite(commitInChunks(items.map(e => b => b.delete(entryRef(e.id)))), 'remover itens')
+    const ref = listId
+    toast(label, {
+      action: {
+        label: 'Desfazer',
+        run: () => queueWrite(commitInChunks(items.map(({ id, ...data }) => b =>
+          b.set(doc(db, 'families', familyId, 'lists', ref, 'entries', id), data))), 'desfazer'),
+      },
+    })
+  }
+
+  async function clearPending() {
+    const items = pending
+    if (!await ask({ title: `Remover ${items.length} ${items.length === 1 ? 'item pendente' : 'itens pendentes'}?`, message: 'Os itens já no carrinho continuam.', confirm: 'Remover', danger: true })) return
+    removeWithUndo(items, `${items.length} ${items.length === 1 ? 'item removido' : 'itens removidos'}.`)
   }
 
   // Não espera o servidor: offline a gravação fica na fila e a tela fecha na hora
-  function handleSave(data, { inCart = false } = {}) {
+  async function handleSave(data, { inCart = false } = {}) {
     const col = collection(db, 'families', familyId, 'lists', listId, 'entries')
+    // Item já pendente na lista: soma a quantidade em vez de duplicar (se a pessoa quiser)
+    const twin = !editItem && !inCart && pending.find(e => e.name.trim().toLowerCase() === data.name.trim().toLowerCase())
+    if (twin) {
+      const choice = await ask({
+        title: `"${twin.name}" já está na lista`,
+        message: `Tem ${twin.qty} ${twin.unit} pendente. Somar a quantidade ou deixar dois itens separados?`,
+        confirm: 'Somar quantidade', cancel: 'Deixar separado',
+      })
+      if (choice === null) return
+      if (choice) {
+        const qty = Math.round(((Number(twin.qty) || 0) + (Number(data.qty) || 0)) * 1000) / 1000
+        const price = Number(twin.pricePerUnit) || Number(data.pricePerUnit) || 0
+        queueWrite(updateDoc(entryRef(twin.id), { qty, ...(price ? { pricePerUnit: price, totalPrice: Math.round(price * qty * 100) / 100 } : {}) }), 'somar quantidade')
+        setShowForm(false); setEditItem(null); setPrefillItem(null)
+        toast(`${twin.name}: agora ${qty} ${twin.unit}.`, { tone: 'ok' })
+        return
+      }
+    }
     if (editItem) {
       queueWrite(updateDoc(entryRef(editItem.id), data), 'salvar item')
     } else {
@@ -244,7 +280,9 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   }
 
   function handleDelete(id) {
-    queueWrite(deleteDoc(entryRef(id)), 'remover item')
+    const entry = entries.find(e => e.id === id)
+    if (!entry) return
+    removeWithUndo([entry], `"${entry.name}" removido.`)
   }
 
   function finishShopping() {
@@ -255,7 +293,9 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     setSaving(true)
     const mercadoName = mercado.trim() || 'Não informado'
     const today = localDate()
-    const historyRef = doc(collection(db, 'families', familyId, 'history'))
+    // Id derivado dos itens: dois aparelhos (ou toque duplo) finalizando o mesmo carrinho
+    // gravam o mesmo registro em vez de duplicar a compra
+    const historyRef = doc(db, 'families', familyId, 'history', purchaseId(listId, checked.map(e => e.id)))
     const ops = [
       b => b.set(historyRef, {
         createdAt: serverTimestamp(),
@@ -291,6 +331,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     // Enfileira tudo de uma vez: offline a compra fica salva e sobe quando a conexão voltar
     queueWrite(commitInChunks(ops), 'registrar compra')
     setFinishing(false); setMercado(''); setSaving(false)
+    toast(`Compra registrada: ${fmt(totalChecked)}${navigator.onLine ? '' : ' (sobe quando a internet voltar)'}.`, { tone: 'ok' })
     clearShopping()
   }
 
@@ -373,22 +414,12 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
           onSaved={({ removed, leftChecked, reconciled }) => {
             setShowNfce(false)
             clearShopping()
-            setNotice(reconciled
+            toast(reconciled
               ? 'Compra conciliada com a nota fiscal. Valores atualizados, sem duplicar.'
-              : `Compra registrada pela nota. ${removed} ${removed === 1 ? 'item saiu' : 'itens saíram'} da lista${leftChecked ? `; ${leftChecked} marcado(s) não estavam na nota e continuam na lista` : ''}.`)
-            setTimeout(() => setNotice(''), 7000)
+              : `Compra registrada pela nota. ${removed} ${removed === 1 ? 'item saiu' : 'itens saíram'} da lista${leftChecked ? `; ${leftChecked} marcado(s) não estavam na nota e continuam na lista` : ''}.`,
+            { tone: 'ok', duration: 7000 })
           }}
         />
-      )}
-      {notice && (
-        <div className="fixed top-3 inset-x-3 z-[60] max-w-lg mx-auto bg-green-600/95 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl" onClick={() => setNotice('')}>
-          {notice}
-        </div>
-      )}
-      {writeError && (
-        <div className="fixed top-3 inset-x-3 z-[60] max-w-lg mx-auto bg-red-500/90 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl">
-          Não foi possível {writeError.what}. Tente de novo.
-        </div>
       )}
     </>
   )

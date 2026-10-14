@@ -8,6 +8,7 @@ import QrScanner from './QrScanner'
 import { CATEGORIES, suggestCategory } from '../lib/categories'
 import { addPendingNote, isContingencyKey, keyFromUrl, listPendingNotes, removePendingNote } from '../lib/pendingNotes'
 import { parseAccessKey } from '../../api/_lib/nfce-parse.js'
+import { ask, showError } from '../lib/feedback'
 
 // Link do QR (http...) ou chave de acesso digitada/colada (44 números, com ou sem espaços)
 const isLink = s => /^\s*https?:\/\//i.test(String(s || ''))
@@ -243,7 +244,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
       const leftChecked = original ? 0 : entries.filter(e => e.checked && !bought.has(String(e.name).toLowerCase())).length
       onSaved?.({ removed: removed.length, leftChecked, reconciled: !!original })
     } catch (e) {
-      alert('Erro ao registrar: ' + e.message)
+      showError(e, 'registrar a nota')
       setStep('review')
     }
   }
@@ -285,8 +286,8 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
                       <span className="text-gray-500 text-xs"> · guardada {new Date(n.savedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}{n.contingency ? ' · contingência' : ''}</span>
                     </span>
                     <button onClick={() => start(n.url)} className="text-sm font-medium text-green-300 border border-green-500/40 bg-green-500/10 px-3 py-1 rounded-full">Ler</button>
-                    <button onClick={() => confirm('Remover esta nota da lista?') && removePendingNote(familyId, n.key || n.url)}
-                      className="text-gray-500 text-sm px-1" aria-label="Remover nota guardada">✕</button>
+                    <button onClick={async () => { if (await ask({ title: 'Remover nota guardada?', message: 'Ela sai da fila de leitura. A compra não é afetada.', confirm: 'Remover', danger: true })) removePendingNote(familyId, n.key || n.url) }}
+                      className="text-gray-500 text-sm min-w-11 min-h-11" aria-label="Remover nota guardada">✕</button>
                   </div>
                 ))}
               </div>

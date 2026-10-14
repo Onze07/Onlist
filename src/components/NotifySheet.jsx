@@ -3,6 +3,7 @@ import Sheet from './Sheet'
 import { useAuth } from '../context/AuthContext'
 import { useFamily } from '../context/FamilyContext'
 import { sendNotify } from '../lib/push'
+import { showError } from '../lib/feedback'
 
 // "Avisar fulano": escolhe quem recebe o aviso de que tem compra para fazer
 export default function NotifySheet({ listName, pendingCount, onClose }) {
@@ -27,7 +28,7 @@ export default function NotifySheet({ listName, pendingCount, onClose }) {
       setResult(r)
       setStatus('sent')
     } catch (e) {
-      alert(e.message)
+      showError(e, 'enviar o aviso')
       setStatus('idle')
     }
   }

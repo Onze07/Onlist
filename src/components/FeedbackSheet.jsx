@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { apiPost } from '../lib/api'
 import { useFamily } from '../context/FamilyContext'
 import Sheet from './Sheet'
+import { showError } from '../lib/feedback'
 
 const TYPES = [
   { id: 'sugestao', label: '💡 Sugestão' },
@@ -28,7 +29,7 @@ export default function FeedbackSheet({ onClose }) {
       })
       setStatus('sent')
     } catch (e) {
-      alert(navigator.onLine ? 'Erro ao enviar: ' + e.message : 'Sem internet. Tente de novo quando a conexão voltar.')
+      showError(e, 'enviar sua mensagem')
       setStatus('idle')
     }
   }

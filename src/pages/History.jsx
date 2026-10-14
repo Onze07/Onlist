@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { collection, onSnapshot, orderBy, query, deleteDoc, doc, getDocs, limit } from 'firebase/firestore'
+import { collection, onSnapshot, orderBy, query, deleteDoc, doc, getDocs, limit, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
 import { IconTrash, IconChevronDown, IconChevronRight, IconDownload } from '../components/Icon'
 import { historyCsv, downloadFile } from '../lib/csv'
-import { localDate } from '../lib/firestore'
+import { localDate, queueWrite } from '../lib/firestore'
 import { useAuth } from '../context/AuthContext'
 import NfceReader from '../components/NfceReader'
 import { listPendingNotes } from '../lib/pendingNotes'
+import { showError, toast } from '../lib/feedback'
 
 function fmt(n) {
   return (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -109,10 +110,17 @@ export default function History() {
     return () => io.disconnect()
   }, [hasMore, loadingMore])
 
-  async function deleteRecord(id, mercado) {
-    if (!confirm(`Excluir registro de "${mercado}"?`)) return
-    await deleteDoc(doc(db, 'families', familyId, 'history', id))
+  // Exclui na hora e oferece "Desfazer" (regrava o mesmo registro)
+  function deleteRecord(id, mercado) {
+    const record = records.find(r => r.id === id)
+    const ref = doc(db, 'families', familyId, 'history', id)
+    queueWrite(deleteDoc(ref), 'excluir o registro')
     if (expanded === id) setExpanded(null)
+    if (!record) return
+    const { id: _id, ...data } = record
+    toast(`Registro de ${mercado} excluído.`, {
+      action: { label: 'Desfazer', run: () => queueWrite(setDoc(ref, data), 'desfazer') },
+    })
   }
 
   // A exportação busca tudo, não só o que já está na tela
@@ -122,7 +130,7 @@ export default function History() {
       const snap = await getDocs(query(collection(db, 'families', familyId, 'history'), orderBy('createdAt', 'desc')))
       downloadFile(`onlist-compras-${localDate()}.csv`, historyCsv(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
     } catch (e) {
-      alert('Erro ao exportar: ' + e.message)
+      showError(e, 'exportar as compras')
     }
     setExporting(false)
   }

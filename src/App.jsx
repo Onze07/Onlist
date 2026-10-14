@@ -17,6 +17,7 @@ import { LEGAL_VERSION } from './lib/legal'
 import SwitchFamilySheet from './components/SwitchFamilySheet'
 import SupportReply from './components/SupportReply'
 import { clearPendingInvite, getPendingInvite } from './lib/invite'
+import { toast } from './lib/feedback'
 
 function useHash() {
   const [hash, setHash] = useState(window.location.hash)
@@ -37,11 +38,11 @@ export default function App() {
   const clearPendingCatalogItem = useCallback(() => setPendingCatalogItem(null), [])
   const [invite, setInvite] = useState(() => getPendingInvite())
 
-  // Some sozinho depois de alguns segundos
+  // Avisos da família (troca de família, posse etc.) viram toast
   useEffect(() => {
     if (!notice) return
-    const t = setTimeout(() => setNotice(''), 6000)
-    return () => clearTimeout(t)
+    toast(notice, { tone: 'ok', duration: 6000 })
+    setNotice('')
   }, [notice, setNotice])
 
   // Abriu o link de convite da própria família: nada a fazer
@@ -94,12 +95,6 @@ export default function App() {
       {userDoc?.supportReply && userDoc.supportReply.seen === false && (
         <SupportReply data={userDoc.supportReply}
           onClose={() => updateUserDoc({ supportReply: { seen: true } }).catch(() => {})} />
-      )}
-      {notice && (
-        <div className="fixed left-4 right-4 z-[60] bg-gray-800 border border-green-500/40 text-green-200 text-sm rounded-xl px-4 py-3 shadow-xl"
-          style={{ top: 'max(16px, env(safe-area-inset-top))' }} role="status" onClick={() => setNotice('')}>
-          {notice}
-        </div>
       )}
     </div>
   )

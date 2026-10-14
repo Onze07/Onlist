@@ -4,6 +4,7 @@ import { db } from '../firebase'
 import { commitInChunks } from '../lib/firestore'
 import { useFamily } from '../context/FamilyContext'
 import { IconEdit, IconTrash, IconArchive, IconUnarchive, IconX } from './Icon'
+import { ask, showError, toast } from '../lib/feedback'
 
 export default function ListManager({ activeListId, onSelect, onClose }) {
   const { familyId } = useFamily()
@@ -40,16 +41,18 @@ export default function ListManager({ activeListId, onSelect, onClose }) {
 
   async function renameList(id, name) {
     if (!name.trim()) return
-    await updateDoc(doc(db, 'families', familyId, 'lists', id), { name: name.trim() })
-    if (id === activeListId) onSelect(id, name.trim())
-    setEditingId(null)
+    try {
+      await updateDoc(doc(db, 'families', familyId, 'lists', id), { name: name.trim() })
+      if (id === activeListId) onSelect(id, name.trim())
+      setEditingId(null)
+    } catch (e) { showError(e, 'renomear a lista') }
   }
 
   // Evita deixar a tela principal apontando para uma lista arquivada/excluída
   function nextActiveList(id) {
     const next = active.find(l => l.id !== id)
     if (id === activeListId && !next) {
-      alert('Crie outra lista antes. Esta é a única lista ativa.')
+      toast('Crie outra lista antes. Esta é a única lista ativa.', { tone: 'error' })
       return undefined
     }
     return next || null
@@ -58,18 +61,20 @@ export default function ListManager({ activeListId, onSelect, onClose }) {
   async function archiveList(id) {
     const next = nextActiveList(id)
     if (next === undefined) return
-    await updateDoc(doc(db, 'families', familyId, 'lists', id), { status: 'archived' })
-    if (id === activeListId) onSelect(next.id, next.name)
+    try {
+      await updateDoc(doc(db, 'families', familyId, 'lists', id), { status: 'archived' })
+      if (id === activeListId) onSelect(next.id, next.name)
+    } catch (e) { showError(e, 'arquivar a lista') }
   }
 
   async function unarchiveList(id) {
-    await updateDoc(doc(db, 'families', familyId, 'lists', id), { status: 'active' })
+    await updateDoc(doc(db, 'families', familyId, 'lists', id), { status: 'active' }).catch(e => showError(e, 'reativar a lista'))
   }
 
   async function deleteList(id, name) {
     const next = nextActiveList(id)
     if (next === undefined) return
-    if (!confirm(`Excluir a lista "${name}" permanentemente?`)) return
+    if (!await ask({ title: `Excluir a lista "${name}"?`, message: 'Os itens dela também são apagados. Isso não pode ser desfeito.', confirm: 'Excluir lista', danger: true })) return
     try {
       // Firestore não apaga subcoleções sozinho: remove os itens antes da lista
       const listRef = doc(db, 'families', familyId, 'lists', id)
@@ -80,7 +85,7 @@ export default function ListManager({ activeListId, onSelect, onClose }) {
       ])
       if (id === activeListId) onSelect(next.id, next.name)
     } catch (e) {
-      alert('Erro ao excluir: ' + e.message)
+      showError(e, 'excluir a lista')
     }
   }
 

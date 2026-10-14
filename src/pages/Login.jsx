@@ -1,5 +1,6 @@
 import { getAdditionalUserInfo, signInWithPopup, updateProfile } from 'firebase/auth'
 import { auth, googleProvider } from '../firebase'
+import { showError } from '../lib/feedback'
 
 function OnlistLogo({ size = 80 }) {
   return (
@@ -30,7 +31,7 @@ export default function Login() {
         await updateProfile(result.user, { photoURL: profile.picture }).catch(() => {})
       }
     } catch (e) {
-      alert('Erro ao entrar: ' + e.message)
+      showError(e, 'entrar com o Google')
     }
   }
 
