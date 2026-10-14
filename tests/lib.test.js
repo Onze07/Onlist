@@ -207,3 +207,29 @@ test('preço fora da curva e remoção do preço de uma compra', async () => {
   assert.equal(withoutPurchase(leite, { price: 30, mercado: 'Irmãos Gonçalves', date: '2026-10-12' }).removed.length, 0)
   assert.equal(lastPriceOf([]), null)
 })
+
+test('preços de uma compra: acha no catálogo pela data, mercado e preço', async () => {
+  const { pricesOfPurchase } = await import('../src/lib/prices.js')
+  const catalog = {
+    leite: { priceHistory: [
+      { price: 6.37, date: '2026-10-05', mercado: 'IG' },
+      { price: 34.39, date: '2026-10-12', mercado: 'IG' },
+    ] },
+    arroz: { priceHistory: [{ price: 6, date: '2026-10-01', mercado: 'IG' }] },
+  }
+  const record = {
+    mercado: 'IG',
+    createdAt: { toDate: () => new Date('2026-10-12T15:00:00') },
+    items: [
+      { name: 'Leite', pricePerUnit: 34.39 },
+      { name: 'Arroz', pricePerUnit: 6 },     // preço de outra data: não mexe
+      { name: 'Pão', pricePerUnit: 1 },       // fora do catálogo
+      { name: 'Sal', pricePerUnit: 0 },
+    ],
+  }
+  const out = pricesOfPurchase(record, catalog)
+  assert.equal(out.length, 1)
+  assert.equal(out[0].key, 'leite')
+  assert.equal(out[0].removed[0].price, 34.39)
+  assert.equal(out[0].lastPrice, 6.37)
+})

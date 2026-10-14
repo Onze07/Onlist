@@ -2,50 +2,28 @@
 // Usa arrayRemove/arrayUnion para não apagar um preço gravado ao mesmo tempo por outra pessoa.
 import { arrayRemove, arrayUnion, deleteField, doc, getDoc, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase'
-import { localDate } from './format.js'
-import { lastPriceOf, withoutPurchase } from './prices.js'
-
-function recordDate(record) {
-  const d = record.createdAt?.toDate?.()
-  return localDate(d || new Date())
-}
+import { lastPriceOf, pricesOfPurchase } from './prices.js'
 
 // Exclui o registro e os preços dele. Devolve a função "Desfazer".
 export async function deletePurchase(familyId, record) {
   const { id, ...data } = record
   const historyRef = doc(db, 'families', familyId, 'history', id)
-  const date = recordDate(record)
-
-  // Mesmo produto pode aparecer mais de uma vez na compra
-  const byKey = new Map()
-  for (const item of record.items || []) {
-    if (!(Number(item.pricePerUnit) > 0) || !item.name) continue
-    const key = String(item.name).toLowerCase()
-    if (!byKey.has(key)) byKey.set(key, [])
-    byKey.get(key).push(Number(item.pricePerUnit))
-  }
 
   // Lê do cache local quando offline (persistentLocalCache)
-  const changes = []
-  await Promise.all([...byKey].map(async ([key, prices]) => {
-    const ref = doc(db, 'families', familyId, 'catalog', key)
-    const snap = await getDoc(ref).catch(() => null)
-    if (!snap?.exists()) return
-    const current = snap.data()
-    let history = current.priceHistory || []
-    const removed = []
-    for (const price of prices) {
-      const r = withoutPurchase(history, { price, mercado: record.mercado, date })
-      history = r.history
-      removed.push(...r.removed)
-    }
-    if (removed.length) changes.push({ ref, removed, lastPrice: current.lastPrice ?? null, nextLast: lastPriceOf(history) })
+  const keys = [...new Set((record.items || []).filter(i => i.name).map(i => String(i.name).toLowerCase()))]
+  const catalog = {}
+  await Promise.all(keys.map(async key => {
+    const snap = await getDoc(doc(db, 'families', familyId, 'catalog', key)).catch(() => null)
+    if (snap?.exists()) catalog[key] = snap.data()
+  }))
+  const changes = pricesOfPurchase(record, catalog).map(c => ({
+    ...c, ref: doc(db, 'families', familyId, 'catalog', c.key), prevLast: catalog[c.key].lastPrice ?? null,
   }))
 
   const batch = writeBatch(db)
   batch.delete(historyRef)
   for (const c of changes) {
-    batch.update(c.ref, { priceHistory: arrayRemove(...c.removed), lastPrice: c.nextLast ?? deleteField() })
+    batch.update(c.ref, { priceHistory: arrayRemove(...c.removed), lastPrice: c.lastPrice ?? deleteField() })
   }
   const committed = batch.commit()
 
@@ -53,7 +31,7 @@ export async function deletePurchase(familyId, record) {
     const b = writeBatch(db)
     b.set(historyRef, data)
     for (const c of changes) {
-      b.update(c.ref, { priceHistory: arrayUnion(...c.removed), ...(c.lastPrice != null ? { lastPrice: c.lastPrice } : {}) })
+      b.update(c.ref, { priceHistory: arrayUnion(...c.removed), ...(c.prevLast != null ? { lastPrice: c.prevLast } : {}) })
     }
     return b.commit()
   }

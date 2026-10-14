@@ -1,4 +1,4 @@
-import { normalizePriceHistory } from './format.js'
+import { localDate, normalizePriceHistory } from './format.js'
 
 const NOT_INFORMED = 'não informado'
 
@@ -101,4 +101,30 @@ export function trimPriceHistory(history = [], entry, max = PRICE_HISTORY_MAX) {
   const current = normalizePriceHistory(history)
   if (current.length < max) return null
   return [...current.slice(-(max - 1)), entry]
+}
+
+// Preços que uma compra lançou no catálogo: [{ key, removed, history (sem eles), lastPrice }]
+// catalog: { [chave]: { priceHistory } }. A data vem de createdAt (Timestamp ou Date).
+export function pricesOfPurchase(record, catalog = {}) {
+  const at = record?.createdAt?.toDate?.() || (record?.createdAt instanceof Date ? record.createdAt : null)
+  const date = localDate(at || new Date())
+  const byKey = new Map()
+  for (const item of record?.items || []) {
+    if (!(Number(item.pricePerUnit) > 0) || !item.name) continue
+    const key = String(item.name).toLowerCase()
+    if (!byKey.has(key)) byKey.set(key, [])
+    byKey.get(key).push(Number(item.pricePerUnit))
+  }
+  const out = []
+  for (const [key, prices] of byKey) {
+    let history = catalog[key]?.priceHistory || []
+    const removed = []
+    for (const price of prices) {
+      const r = withoutPurchase(history, { price, mercado: record.mercado, date })
+      history = r.history
+      removed.push(...r.removed)
+    }
+    if (removed.length) out.push({ key, removed, history, lastPrice: lastPriceOf(history) })
+  }
+  return out
 }

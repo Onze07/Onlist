@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { collection, doc, getDoc, getDocs, query, serverTimestamp, Timestamp, where } from 'firebase/firestore'
+import { arrayRemove, collection, deleteField, doc, getDoc, getDocs, query, serverTimestamp, Timestamp, where } from 'firebase/firestore'
 import { db } from '../firebase'
 import { apiPost } from '../lib/api'
 import { commitInChunks, priceHistoryWrite, queueWrite } from '../lib/firestore'
@@ -9,6 +9,7 @@ import { CATEGORIES, suggestCategory } from '../lib/categories'
 import { addPendingNote, isContingencyKey, keyFromUrl, listPendingNotes, removePendingNote } from '../lib/pendingNotes'
 import { parseAccessKey } from '../../api/_lib/nfce-parse.js'
 import { ask, showError } from '../lib/feedback'
+import { pricesOfPurchase } from '../lib/prices'
 
 // Link do QR (http...) ou chave de acesso digitada/colada (44 números, com ou sem espaços)
 const isLink = s => /^\s*https?:\/\//i.test(String(s || ''))
@@ -226,11 +227,22 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
       if (mercado.trim()) {
         ops.push(b => b.set(doc(db, 'families', familyId, 'mercados', mercadoName.toLowerCase()), { name: mercadoName }))
       }
+      // Conciliação: os preços da compra manual saem do catálogo (a nota traz os preços certos).
+      // Sem isso, um preço digitado errado na compra manual ficava no histórico para sempre.
+      const histories = {}
+      if (original) {
+        for (const c of pricesOfPurchase(original, catalog)) {
+          histories[c.key] = c.history
+          ops.push(b => b.update(doc(db, 'families', familyId, 'catalog', c.key), {
+            priceHistory: arrayRemove(...c.removed), lastPrice: c.lastPrice ?? deleteField(),
+          }))
+        }
+      }
       for (const { r, x } of chosen) {
         ops.push(b => b.set(doc(db, 'families', familyId, 'catalog', x.key), {
           name: x.name, category: x.category, unit: x.unit,
           lastPrice: x.unitPrice,
-          priceHistory: priceHistoryWrite(catalog[x.key]?.priceHistory, { price: x.unitPrice, date, mercado: mercadoName }),
+          priceHistory: priceHistoryWrite(histories[x.key] ?? catalog[x.key]?.priceHistory, { price: x.unitPrice, date, mercado: mercadoName }),
         }, { merge: true }))
         if (r.nf.code) {
           ops.push(b => b.set(doc(db, 'families', familyId, 'nfceMap', r.nf.code), { catalogId: x.key, nfName: r.nf.name }))
