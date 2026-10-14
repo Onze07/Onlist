@@ -29,10 +29,20 @@ function cookieHeader(jar) {
   return Object.entries(jar).map(([k, v]) => `${k}=${v}`).join('; ')
 }
 
+// Só portais oficiais: cada endereço (inclusive redirecionamentos e o da sessão do captcha,
+// que volta do app) precisa ser http(s) em .gov.br. Impede usar o servidor para acessar outros sites.
+export function isGovUrl(raw) {
+  try {
+    const u = new URL(String(raw))
+    return (u.protocol === 'https:' || u.protocol === 'http:') && /\.gov\.br$/i.test(u.hostname) && !u.username && !u.password
+  } catch { return false }
+}
+
 // fetch com cookies e redirecionamentos manuais (a SEFAZ redireciona http -> https e define a sessão)
 async function request(url, { method = 'GET', body, jar = {}, referer } = {}) {
   let current = url
   for (let i = 0; i < 6; i++) {
+    if (!isGovUrl(current)) throw new Error('Endereço fora do portal da SEFAZ')
     const res = await fetch(current, {
       method,
       body,
@@ -155,7 +165,12 @@ export default async function handler(req, res) {
     }
 
     if (body.action === 'submit') {
-      const s = decode(body.session)
+      let s
+      try { s = decode(body.session) } catch { return res.status(400).json({ error: 'Sessão inválida. Leia a nota de novo.' }) }
+      // A sessão volta do app: confere que todos os endereços são do portal oficial
+      if (!isGovUrl(s?.action) || !isGovUrl(s?.url) || (s.referer && !isGovUrl(s.referer))) {
+        return res.status(400).json({ error: 'Sessão inválida. Leia a nota de novo.' })
+      }
       const answer = String(body.answer || '').trim()
       if (!answer) return res.status(400).json({ error: 'Digite o texto da imagem' })
       const form = new URLSearchParams({ sefin_response: answer, csrf_token: s.csrf })

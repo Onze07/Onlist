@@ -183,3 +183,16 @@ test('data de emissão em outros formatos', () => {
   assert.equal(p('Data de Emissão: 05/09/2026 às 09:15'), '2026-09-05T09:15:00-03:00')
   assert.equal(p('Emissão: 05/09/2026'), '2026-09-05T12:00:00-03:00')
 })
+
+// --- Segurança: servidor só acessa portais .gov.br ---
+test('consulta: só endereços oficiais .gov.br (inclusive os que voltam do app)', async () => {
+  process.env.FIREBASE_SERVICE_ACCOUNT ||= ''
+  const { isGovUrl } = await import('../api/nfce.js')
+  assert.equal(isGovUrl('http://www.nfce.sefin.ro.gov.br/consultanfce/dados_nfce.jsp'), true)
+  assert.equal(isGovUrl('https://evil.com/?x=.gov.br'), false)
+  assert.equal(isGovUrl('http://sefin.ro.gov.br.evil.com/'), false)
+  assert.equal(isGovUrl('http://169.254.169.254/latest/meta-data'), false)
+  assert.equal(isGovUrl('file:///etc/passwd'), false)
+  assert.equal(isGovUrl('http://user:pass@nfce.sefin.ro.gov.br/'), false)
+  assert.equal(isGovUrl(undefined), false)
+})
