@@ -26,6 +26,10 @@ export function cheapest(history = []) {
   return latestByMarket(history)[0] || null
 }
 
+// Variação de 3x ou mais entre duas compras: quase sempre preço lançado errado
+// (caixa no lugar da unidade, vírgula trocada). Fica fora do "subiram/caíram" e pede conferência.
+export const OUTLIER_RATIO = 3
+
 // Variação entre as duas últimas compras do item
 export function trend(history = []) {
   const purchases = normalizePriceHistory(history)
@@ -33,7 +37,33 @@ export function trend(history = []) {
   const last = purchases[purchases.length - 1]
   const prev = purchases[purchases.length - 2]
   const diff = last.price - prev.price
-  return { last, prev, diff, pct: prev.price ? diff / prev.price : 0 }
+  const ratio = prev.price ? last.price / prev.price : 1
+  const outlier = ratio >= OUTLIER_RATIO || ratio <= 1 / OUTLIER_RATIO
+  return { last, prev, diff, pct: prev.price ? diff / prev.price : 0, outlier }
+}
+
+const dayShift = (date, days) => {
+  const d = new Date(`${date}T12:00:00`)
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// Tira do histórico o preço que veio de uma compra (mesmo preço, mercado e data).
+// Sem nada na data exata, aceita 1 dia de diferença (compra finalizada perto da meia-noite).
+export function withoutPurchase(history = [], { price, mercado, date }) {
+  const list = Array.isArray(history) ? history : []
+  const same = h => Math.abs(Number(h?.price) - Number(price)) < 0.005 && marketKey(h?.mercado) === marketKey(mercado)
+  for (const dates of [[date], [dayShift(date, -1), dayShift(date, 1)]]) {
+    const removed = list.filter(h => same(h) && dates.includes(h.date))
+    if (removed.length) return { history: list.filter(h => !removed.includes(h)), removed }
+  }
+  return { history: list, removed: [] }
+}
+
+// Último preço pago (compra mais recente) ou null
+export function lastPriceOf(history = []) {
+  const list = normalizePriceHistory(history)
+  return list.length ? Number(list[list.length - 1].price) : null
 }
 
 // Quanto a lista custaria em cada mercado, pelo último preço pago lá.

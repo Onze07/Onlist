@@ -162,8 +162,10 @@ export default function Reports() {
 
   // --- Preços: subiram / caíram (2 últimas compras) ---
   const trends = catalog.map(i => ({ item: i, t: trend(i.priceHistory) })).filter(x => x.t && Math.abs(x.t.diff) > 0.005)
-  const rising = trends.filter(x => x.t.diff > 0).sort((a, b) => b.t.pct - a.t.pct)
-  const falling = trends.filter(x => x.t.diff < 0).sort((a, b) => a.t.pct - b.t.pct)
+  // Variação de 3x ou mais: provável erro de lançamento, vai para "Confira"
+  const suspicious = trends.filter(x => x.t.outlier)
+  const rising = trends.filter(x => !x.t.outlier && x.t.diff > 0).sort((a, b) => b.t.pct - a.t.pct)
+  const falling = trends.filter(x => !x.t.outlier && x.t.diff < 0).sort((a, b) => a.t.pct - b.t.pct)
   const priceItems = catalog.filter(i => i.priceHistory?.length > 1).slice(0, 20)
 
   function exportPeriod() {
@@ -318,6 +320,22 @@ export default function Reports() {
           <div>
             {trends.length === 0 && priceItems.length === 0 && (
               <p className="text-gray-600 text-sm pt-4">Registros de preço aparecem aqui conforme você compra os mesmos produtos ao longo do tempo.</p>
+            )}
+            {suspicious.length > 0 && (
+              <div className="mt-4 mb-1 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
+                <p className="text-amber-300 text-sm font-medium">Confira {suspicious.length === 1 ? 'este preço' : 'estes preços'}</p>
+                <p className="text-gray-400 text-xs mb-1">Mudou 3 vezes ou mais de uma compra para outra. Se foi lançado errado, remova em Catálogo → produto → histórico.</p>
+                {suspicious.map(({ item, t }) => (
+                  <div key={item.id} className="flex items-center gap-3 py-1.5">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm truncate">{item.name}</p>
+                      <p className="text-gray-500 text-xs truncate">
+                        {fmt(t.prev.price)} → {fmt(t.last.price)} · {t.last.mercado} · {fmtDate(t.last.date, { short: true })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
             {[{ title: 'Subiram', list: rising, color: 'text-red-400', arrow: '↑' }, { title: 'Caíram', list: falling, color: 'text-green-400', arrow: '↓' }]
               .filter(s => s.list.length > 0)

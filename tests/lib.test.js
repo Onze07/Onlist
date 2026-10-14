@@ -186,3 +186,24 @@ test('id da compra: mesmo carrinho = mesmo id, qualquer ordem', async () => {
   assert.notEqual(purchaseId('l1', ['a']), purchaseId('l2', ['a']))
   assert.match(purchaseId('l1', ['a']), /^c_[0-9a-z]+$/)
 })
+
+test('preço fora da curva e remoção do preço de uma compra', async () => {
+  const { trend, withoutPurchase, lastPriceOf } = await import('../src/lib/prices.js')
+  const leite = [
+    { price: 6.37, date: '2026-10-05', mercado: 'Irmãos Gonçalves' },
+    { price: 34.39, date: '2026-10-12', mercado: 'Irmãos Gonçalves' },
+  ]
+  assert.equal(trend(leite).outlier, true)
+  assert.equal(trend([{ price: 17.49, date: '2026-09-01', mercado: 'A' }, { price: 8, date: '2026-09-26', mercado: 'A' }]).outlier, false)
+
+  const r = withoutPurchase(leite, { price: 34.39, mercado: ' irmãos  gonçalves ', date: '2026-10-12' })
+  assert.equal(r.removed.length, 1)
+  assert.equal(r.history.length, 1)
+  assert.equal(lastPriceOf(r.history), 6.37)
+  // Compra finalizada perto da meia-noite: aceita 1 dia de diferença
+  assert.equal(withoutPurchase(leite, { price: 34.39, mercado: 'Irmãos Gonçalves', date: '2026-10-13' }).removed.length, 1)
+  // Outro mercado ou outro preço: não mexe
+  assert.equal(withoutPurchase(leite, { price: 34.39, mercado: 'IG', date: '2026-10-12' }).removed.length, 0)
+  assert.equal(withoutPurchase(leite, { price: 30, mercado: 'Irmãos Gonçalves', date: '2026-10-12' }).removed.length, 0)
+  assert.equal(lastPriceOf([]), null)
+})

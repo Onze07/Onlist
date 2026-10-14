@@ -8,7 +8,8 @@ import MoneyInput from '../components/MoneyInput'
 import { IconEdit, IconTrash, IconChevronDown, IconChevronRight, IconTrendingUp } from '../components/Icon'
 import { UNITS, UNIT_LABELS } from '../lib/nfceMatch'
 import { CATEGORIES, orderCategories } from '../lib/categories'
-import { toast } from '../lib/feedback'
+import { ask, toast } from '../lib/feedback'
+import { deletePriceEntry } from '../lib/purchasePrices'
 
 
 function fmt(n) {
@@ -52,6 +53,17 @@ export default function Catalog({ onAddToList }) {
   function saveEdit(id, data) {
     queueWrite(updateDoc(doc(db, 'families', familyId, 'catalog', id), data), 'salvar o produto')
     setEditingId(null)
+  }
+
+  async function removePrice(item, entry) {
+    if (!await ask({
+      title: `Remover ${fmt(entry.price)} de ${item.name}?`,
+      message: `Preço de ${fmtDate(entry.date)}${entry.mercado ? ` no ${entry.mercado}` : ''}. Sai do histórico, dos relatórios e da comparação entre mercados.`,
+      confirm: 'Remover preço', danger: true,
+    })) return
+    const { committed, undo } = deletePriceEntry(familyId, item, entry)
+    queueWrite(committed, 'remover o preço')
+    toast('Preço removido.', { action: { label: 'Desfazer', run: () => queueWrite(undo(), 'desfazer') } })
   }
 
   // Remove na hora e oferece "Desfazer" (regrava o produto com o histórico de preços)
@@ -171,11 +183,16 @@ export default function Catalog({ onAddToList }) {
                     <p className="text-gray-500 text-xs mb-2 uppercase tracking-wider">Histórico de preços</p>
                     <div className="flex flex-col gap-1">
                       {[...item.priceHistory].reverse().map((h, idx) => (
-                        <div key={idx} className="flex justify-between text-xs gap-3">
-                          <span className="text-gray-500">{fmtDate(h.date)}{h.mercado ? ` · ${h.mercado}` : ''}{h.brand ? ` · ${h.brand}` : ''}</span>
+                        <div key={idx} className="flex items-center justify-between text-xs gap-3">
+                          <span className="text-gray-500 flex-1 min-w-0">{fmtDate(h.date)}{h.mercado ? ` · ${h.mercado}` : ''}{h.brand ? ` · ${h.brand}` : ''}</span>
                           <span className="text-gray-300 flex-shrink-0">{fmt(h.price)}/{item.unit}</span>
+                          <button onClick={() => removePrice(item, h)} aria-label={`Remover preço de ${fmtDate(h.date)}`}
+                            className="text-gray-600 active:text-red-400 min-w-9 min-h-9 -my-2 -mr-2 flex items-center justify-center">
+                            <IconTrash size={13} />
+                          </button>
                         </div>
                       ))}
+                      <p className="text-gray-600 text-[11px] mt-1">Preço errado? Remova pela lixeira. As compras não mudam.</p>
                     </div>
                   </div>
                 )}
