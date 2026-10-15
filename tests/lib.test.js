@@ -158,3 +158,78 @@ test('planilha: itens sem acompanhar preço entram para somar o total pago', () 
   assert.equal(lines.length, 3)
   assert.ok(lines[2].includes('GRANULADO CAMPILA;Sem acompanhamento;2;un;6,99;13,98'))
 })
+
+// --- Categorias ---
+import { CATEGORIES, suggestCategory, orderCategories } from '../src/lib/categories.js'
+
+test('categorias: sugestão pelo nome do produto (nomes reais de nota)', () => {
+  const cases = {
+    'DIPIRONA 500MG': 'Farmácia', 'OLEO MOTOR 5W30': 'Automotivo', 'OLEO DE SOJA SOYA 900ML': 'Mercearia',
+    'BATATA PALITO CONGELADA': 'Congelados', 'BATATA INGLESA KG': 'Hortifruti', 'FRALDA PAMPERS M': 'Bebê',
+    'RACAO GOLDEN 15KG': 'Pet', 'FILME PVC ROLO WYDA 15': 'Casa e Utilidades', 'ASSADEIRA OVAL OPALINE 1L': 'Casa e Utilidades',
+    'ESPONJA ALKLIN MULT DUPLA FAC 3 UND': 'Limpeza', 'BANANA MACA RG': 'Hortifruti', 'MACARRAO ESPAGUETE': 'Mercearia',
+    'Pão francês': 'Padaria', 'LEITE INTEGRAL': 'Laticínios', 'REFRIGERANTE COCA COLA 2L': 'Bebidas',
+  }
+  for (const [name, cat] of Object.entries(cases)) assert.equal(suggestCategory(name), cat, name)
+  assert.equal(suggestCategory('BERMUDA JEANS'), null)
+  assert.ok(Object.values(cases).every(c => CATEGORIES.includes(c)))
+})
+
+test('categorias: ordem do mercado e categoria antiga não some', () => {
+  assert.deepEqual(orderCategories(['Outros', 'Farmácia', 'Hortifruti', 'Frios']), ['Hortifruti', 'Farmácia', 'Frios', 'Outros'])
+})
+
+test('id da compra: mesmo carrinho = mesmo id, qualquer ordem', async () => {
+  const { purchaseId } = await import('../src/lib/purchaseId.js')
+  assert.equal(purchaseId('l1', ['b', 'a']), purchaseId('l1', ['a', 'b']))
+  assert.notEqual(purchaseId('l1', ['a', 'b']), purchaseId('l1', ['a', 'c']))
+  assert.notEqual(purchaseId('l1', ['a']), purchaseId('l2', ['a']))
+  assert.match(purchaseId('l1', ['a']), /^c_[0-9a-z]+$/)
+})
+
+test('preço fora da curva e remoção do preço de uma compra', async () => {
+  const { trend, withoutPurchase, lastPriceOf } = await import('../src/lib/prices.js')
+  const leite = [
+    { price: 6.37, date: '2026-10-05', mercado: 'Irmãos Gonçalves' },
+    { price: 34.39, date: '2026-10-12', mercado: 'Irmãos Gonçalves' },
+  ]
+  assert.equal(trend(leite).outlier, true)
+  assert.equal(trend([{ price: 17.49, date: '2026-09-01', mercado: 'A' }, { price: 8, date: '2026-09-26', mercado: 'A' }]).outlier, false)
+
+  const r = withoutPurchase(leite, { price: 34.39, mercado: ' irmãos  gonçalves ', date: '2026-10-12' })
+  assert.equal(r.removed.length, 1)
+  assert.equal(r.history.length, 1)
+  assert.equal(lastPriceOf(r.history), 6.37)
+  // Compra finalizada perto da meia-noite: aceita 1 dia de diferença
+  assert.equal(withoutPurchase(leite, { price: 34.39, mercado: 'Irmãos Gonçalves', date: '2026-10-13' }).removed.length, 1)
+  // Outro mercado ou outro preço: não mexe
+  assert.equal(withoutPurchase(leite, { price: 34.39, mercado: 'IG', date: '2026-10-12' }).removed.length, 0)
+  assert.equal(withoutPurchase(leite, { price: 30, mercado: 'Irmãos Gonçalves', date: '2026-10-12' }).removed.length, 0)
+  assert.equal(lastPriceOf([]), null)
+})
+
+test('preços de uma compra: acha no catálogo pela data, mercado e preço', async () => {
+  const { pricesOfPurchase } = await import('../src/lib/prices.js')
+  const catalog = {
+    leite: { priceHistory: [
+      { price: 6.37, date: '2026-10-05', mercado: 'IG' },
+      { price: 34.39, date: '2026-10-12', mercado: 'IG' },
+    ] },
+    arroz: { priceHistory: [{ price: 6, date: '2026-10-01', mercado: 'IG' }] },
+  }
+  const record = {
+    mercado: 'IG',
+    createdAt: { toDate: () => new Date('2026-10-12T15:00:00') },
+    items: [
+      { name: 'Leite', pricePerUnit: 34.39 },
+      { name: 'Arroz', pricePerUnit: 6 },     // preço de outra data: não mexe
+      { name: 'Pão', pricePerUnit: 1 },       // fora do catálogo
+      { name: 'Sal', pricePerUnit: 0 },
+    ],
+  }
+  const out = pricesOfPurchase(record, catalog)
+  assert.equal(out.length, 1)
+  assert.equal(out[0].key, 'leite')
+  assert.equal(out[0].removed[0].price, 34.39)
+  assert.equal(out[0].lastPrice, 6.37)
+})

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useFamily } from '../context/FamilyContext'
 import { clearPendingInvite, getPendingInvite } from '../lib/invite'
+import { IconBadge, IconCheck, IconUsers, IconMail, IconKey } from '../components/Icon'
 
 export default function FamilySetup() {
   const { createFamily, joinFamily } = useFamily()
@@ -39,8 +40,8 @@ export default function FamilySetup() {
   if (createdCode) {
     return (
       <div className="flex flex-col items-center justify-center min-h-svh bg-gray-900 px-6">
-        <div className="text-4xl mb-4">🎉</div>
-        <h2 className="text-xl font-bold text-white mb-2">Família criada!</h2>
+        <div className="mb-4"><IconBadge tone="green"><IconCheck size={24} /></IconBadge></div>
+        <h2 className="text-xl font-bold text-white mb-2">Família criada</h2>
         <p className="text-gray-400 text-sm mb-6 text-center">
           Compartilhe este código com quem vai usar a lista com você:
         </p>
@@ -57,7 +58,7 @@ export default function FamilySetup() {
   if (!mode) {
     return (
       <div className="flex flex-col items-center justify-center min-h-svh bg-gray-900 px-6">
-        <div className="text-5xl mb-4">👨‍👩‍👧</div>
+        <div className="mb-4"><IconBadge tone="green"><IconUsers size={26} /></IconBadge></div>
         <h2 className="text-xl font-bold text-white mb-2">Configure sua família</h2>
         <p className="text-gray-400 text-sm mb-10 text-center">
           Crie uma lista nova ou entre em uma já existente
@@ -82,9 +83,9 @@ export default function FamilySetup() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-svh bg-gray-900 px-6">
-      <button onClick={() => { clearPendingInvite(); setMode(null) }} className="absolute top-6 left-6 text-gray-400 text-2xl" aria-label="Voltar">←</button>
-      <div className="text-4xl mb-4">{invited ? '💌' : '🔑'}</div>
-      <h2 className="text-xl font-bold text-white mb-2">{invited ? 'Você foi convidado!' : 'Digite o código'}</h2>
+      <button onClick={() => { clearPendingInvite(); setMode(null) }} className="absolute top-6 left-4 text-gray-400 text-2xl min-w-11 min-h-11" aria-label="Voltar">←</button>
+      <div className="mb-4"><IconBadge tone="green">{invited ? <IconMail size={24} /> : <IconKey size={24} />}</IconBadge></div>
+      <h2 className="text-xl font-bold text-white mb-2">{invited ? 'Você recebeu um convite' : 'Digite o código'}</h2>
       <p className="text-gray-400 text-sm mb-8 text-center">
         {invited ? 'Toque em Entrar para participar da lista da família.' : 'Peça o código de 6 letras para quem criou a lista'}
       </p>

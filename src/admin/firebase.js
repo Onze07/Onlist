@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth, GoogleAuthProvider } from 'firebase/auth'
+import { getAuth, GoogleAuthProvider, signOut } from 'firebase/auth'
 import { firebaseConfig } from '../firebaseConfig'
 
 // Instância separada ("admin"): o login do painel não se mistura com o login do app no mesmo navegador
@@ -18,6 +18,11 @@ export async function adminApi(action, payload = {}) {
     body: JSON.stringify({ action, ...payload }),
   })
   const data = await res.json().catch(() => ({}))
+  if (res.status === 401 && data.reauth) {
+    // Login do painel venceu (12 h): volta para a tela de entrada
+    try { sessionStorage.setItem('adminNotice', data.error) } catch { /* ignora */ }
+    await signOut(adminAuth)
+  }
   if (!res.ok) throw new Error(data.error || 'Erro de conexão')
   return data
 }

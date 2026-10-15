@@ -12,6 +12,7 @@ import { pushStatus, enablePush, disablePush } from '../lib/push'
 import { inviteLink, inviteText } from '../lib/invite'
 import InviteQr from '../components/InviteQr'
 import SwitchFamilySheet from '../components/SwitchFamilySheet'
+import { ask, showError, toast } from '../lib/feedback'
 
 function Avatar({ profile, size = 36 }) {
   const initial = (profile?.name || profile?.email || '?').trim().charAt(0).toUpperCase()
@@ -69,7 +70,7 @@ export default function Account() {
   async function run(fn) {
     if (busy) return
     setBusy(true)
-    try { await fn() } catch (e) { alert('Erro: ' + e.message) } finally { setBusy(false) }
+    try { await fn() } catch (e) { showError(e) } finally { setBusy(false) }
   }
 
   const text = inviteText(family.name, family.code)
@@ -83,7 +84,7 @@ export default function Account() {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      alert(text)
+      toast(`Código da família: ${family.code}`, { duration: 10000 })
     }
   }
 
@@ -106,8 +107,8 @@ export default function Account() {
           <p className="text-white font-medium truncate">{user.displayName || user.email}</p>
           <p className="text-gray-500 text-xs truncate">{user.email}</p>
         </div>
-        <button onClick={() => confirm('Sair da sua conta neste aparelho?') && signOut(auth)}
-          className="text-gray-400 text-xs border border-gray-700 px-3 py-1.5 rounded-lg">
+        <button onClick={async () => { if (await ask({ title: 'Sair da conta neste aparelho?', message: 'Seus dados continuam salvos. É só entrar de novo com o Google.', confirm: 'Sair' })) signOut(auth) }}
+          className="text-gray-400 text-xs border border-gray-700 px-4 min-h-10 rounded-lg">
           Sair
         </button>
       </div>
@@ -121,14 +122,14 @@ export default function Account() {
                 onKeyDown={e => e.key === 'Enter' && run(async () => { await renameFamily(name); setEditingName(false) })}
                 className="flex-1 bg-gray-800 text-white px-3 py-2 rounded-lg outline-none text-sm border border-gray-700" />
               <button onClick={() => run(async () => { await renameFamily(name); setEditingName(false) })}
-                className="text-green-400 text-sm font-semibold px-2">OK</button>
-              <button onClick={() => setEditingName(false)} className="text-gray-500 px-1"><IconX /></button>
+                className="text-green-400 text-sm font-semibold px-3 min-h-11">Salvar</button>
+              <button onClick={() => setEditingName(false)} aria-label="Cancelar" className="text-gray-500 min-w-11 min-h-11 flex items-center justify-center"><IconX /></button>
             </div>
           ) : (
             <div className="flex items-center justify-between">
               <span className="text-white font-medium">{family.name || 'Minha família'}</span>
               {isAdmin && (
-                <button onClick={() => { setName(family.name || ''); setEditingName(true) }} className="text-gray-400">
+                <button onClick={() => { setName(family.name || ''); setEditingName(true) }} aria-label="Renomear família" className="text-gray-400 min-w-11 min-h-11 -mr-3 -my-3 flex items-center justify-center">
                   <IconEdit size={16} />
                 </button>
               )}
@@ -184,8 +185,8 @@ export default function Account() {
           )}
           {isAdmin && (
             <button disabled={busy}
-              onClick={() => confirm('Gerar um novo código? O código e o link atuais deixam de funcionar.') && run(regenerateCode)}
-              className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border border-gray-700 bg-gray-800 text-gray-300 active:bg-gray-700">
+              onClick={async () => { if (await ask({ title: 'Gerar um novo código?', message: 'O código e o link atuais deixam de funcionar. Quem já está na família continua.', confirm: 'Gerar novo código' })) run(regenerateCode) }}
+              className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium px-4 min-h-10 rounded-full border border-gray-700 bg-gray-800 text-gray-300 active:bg-gray-700">
               Gerar novo código
             </button>
           )}
@@ -214,13 +215,13 @@ export default function Account() {
               </span>
               {(isOwner && !isMe) || canRemove ? (
                 <select value="" disabled={busy}
-                  onChange={e => {
+                  onChange={async e => {
                     const action = e.target.value
                     const who = p?.name || 'esta pessoa'
                     if (action === 'admin') run(() => setAdmin(uid, true))
                     if (action === 'unadmin') run(() => setAdmin(uid, false))
-                    if (action === 'remove' && confirm(`Remover ${who} da família?`)) run(() => removeMember(uid))
-                    if (action === 'owner' && confirm(`Passar a posse da família para ${who}? Você vira admin e pode sair da família depois.`)) {
+                    if (action === 'remove' && await ask({ title: `Remover ${who} da família?`, message: 'A pessoa perde acesso às listas e aos registros.', confirm: 'Remover', danger: true })) run(() => removeMember(uid))
+                    if (action === 'owner' && await ask({ title: `Passar a posse para ${who}?`, message: 'Você vira admin e pode sair da família depois.', confirm: 'Passar a posse' })) {
                       run(() => transferOwnership(uid))
                     }
                   }}
@@ -245,7 +246,7 @@ export default function Account() {
         </button>
         {!isOwner && (
           <button disabled={busy}
-            onClick={() => confirm('Sair desta família? Você perde acesso às listas e ao histórico.') && run(leaveFamily)}
+            onClick={async () => { if (await ask({ title: 'Sair desta família?', message: 'Você perde acesso às listas e ao histórico.', confirm: 'Sair da família', danger: true })) run(leaveFamily) }}
             className="w-full text-red-400 text-sm border border-red-500/30 py-3 rounded-xl">
             Sair da família
           </button>
@@ -270,7 +271,7 @@ export default function Account() {
             </div>
             {push === 'off' && (
               <button disabled={busy} onClick={() => run(async () => { await enablePush(user, family.id); setPush(pushStatus()) })}
-                className="bg-green-500 text-white text-sm font-semibold px-3 py-1.5 rounded-lg flex-shrink-0">Ativar</button>
+                className="bg-green-500 text-white text-sm font-semibold px-4 min-h-10 rounded-lg flex-shrink-0">Ativar</button>
             )}
             {push === 'enabled' && (
               <button disabled={busy} onClick={() => run(async () => { await disablePush(user, family.id); setPush(pushStatus()) })}
@@ -284,7 +285,7 @@ export default function Account() {
         </div>
         {/* Preferência só faz sentido depois de ativar os avisos neste aparelho */}
         {push === 'enabled' && (
-          <button onClick={() => updateUserDoc({ notifyShopping: userDoc?.notifyShopping === false }).catch(e => alert('Erro: ' + e.message))}
+          <button onClick={() => updateUserDoc({ notifyShopping: userDoc?.notifyShopping === false }).catch(e => showError(e, 'salvar a preferência'))}
             className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left" aria-pressed={userDoc?.notifyShopping !== false}>
             <span>
               <span className="text-white text-sm block">Quando alguém começar a comprar</span>
@@ -305,8 +306,8 @@ export default function Account() {
           </div>
           <div className="flex bg-gray-900 rounded-lg p-0.5 border border-gray-700">
             {[2, 3].map(n => (
-              <button key={n} onClick={() => updateUserDoc({ priceDecimals: n }).catch(e => alert('Erro: ' + e.message))}
-                className={`px-3 py-1 text-sm rounded-md ${decimals === n ? 'bg-green-500 text-white' : 'text-gray-400'}`}>
+              <button key={n} onClick={() => updateUserDoc({ priceDecimals: n }).catch(e => showError(e, 'salvar a preferência'))}
+                aria-label={`${n} casas decimais`} aria-pressed={decimals === n} className={`min-w-10 min-h-9 text-sm rounded-md ${decimals === n ? 'bg-green-500 text-white' : 'text-gray-400'}`}>
                 {n}
               </button>
             ))}
@@ -332,13 +333,13 @@ export default function Account() {
 
       <div className="px-4 pt-8 pb-4 text-center">
         <button disabled={busy}
-          onClick={() => {
-            const msg = isOwner && family.members.length === 1
-              ? 'Excluir sua conta? Todas as listas, o catálogo e o histórico da família serão apagados para sempre.'
-              : 'Excluir sua conta? Você sai da família e seus dados pessoais são apagados.'
-            if (confirm(msg) && confirm('Tem certeza? Isso não pode ser desfeito.')) run(deleteAccount)
+          onClick={async () => {
+            const message = isOwner && family.members.length === 1
+              ? 'Todas as listas, o catálogo e o histórico da família serão apagados para sempre.'
+              : 'Você sai da família e seus dados pessoais são apagados.'
+            if (await ask({ title: 'Excluir sua conta?', message: `${message} Isso não pode ser desfeito.`, confirm: 'Excluir conta', danger: true })) run(deleteAccount)
           }}
-          className="text-red-400/80 text-xs underline underline-offset-2">
+          className="text-red-400/80 text-xs underline underline-offset-2 min-h-11 px-3">
           Excluir minha conta
         </button>
       </div>

@@ -15,14 +15,16 @@ import PresenceBanner from '../components/PresenceBanner'
 import NotifySheet from '../components/NotifySheet'
 import NfceReader from '../components/NfceReader'
 import { sendNotify } from '../lib/push'
-import { useOnline, useWriteErrors } from '../lib/useSync'
+import { useOnline } from '../lib/useSync'
+import { ask, toast } from '../lib/feedback'
+import { purchaseId } from '../lib/purchaseId'
 import { usePresence } from '../lib/usePresence'
 import { cheapest } from '../lib/prices'
-import { IconChevronDown, IconCheck, IconPlus, IconX, IconBell, IconScale, IconUndo, IconTrash, IconCalc } from '../components/Icon'
+import { IconChevronDown, IconCheck, IconPlus, IconX, IconBell, IconScale, IconUndo, IconTrash, IconCalc, IconBadge, IconCamera, IconCart, IconChevronRight } from '../components/Icon'
 import PriceCalculator from '../components/PriceCalculator'
 import ActionChip from '../components/ActionChip'
+import { orderCategories } from '../lib/categories'
 
-const CATEGORY_ORDER = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
 
 function fmt(n) {
   return (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -51,12 +53,10 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   const [saving, setSaving] = useState(false)
   const [pendingSync, setPendingSync] = useState(false)
   const online = useOnline()
-  const writeError = useWriteErrors()
   const othersShopping = usePresence(familyId, user?.uid)
   const presenceWrittenAt = useRef(0)
   const [showNotify, setShowNotify] = useState(false)
   const [showNfce, setShowNfce] = useState(false)
-  const [notice, setNotice] = useState('')
   const finishingRef = useRef(false)
 
   // Load last list: usa a salva neste aparelho, senão a primeira ativa, senão cria a padrão
@@ -182,7 +182,8 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       if (!groups[cat]) groups[cat] = []
       groups[cat].push(item)
     }
-    return CATEGORY_ORDER.filter(c => groups[c]).map(c => ({ cat: c, items: groups[c] }))
+    // Categoria antiga ou desconhecida não some da lista
+    return orderCategories(Object.keys(groups)).map(c => ({ cat: c, items: groups[c] }))
   }
 
   function doCheck(entry, priceOverride) {
@@ -211,19 +212,55 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     doCheck(entry, 0)
   }
 
-  function uncheckAll() {
-    if (!confirm(`Desmarcar os ${checked.length} itens do carrinho?`)) return
-    queueWrite(commitInChunks(checked.map(e => b => b.update(entryRef(e.id), { checked: false }))), 'desmarcar itens')
+  async function uncheckAll() {
+    const items = checked
+    if (!await ask({ title: `Desmarcar ${items.length} ${items.length === 1 ? 'item' : 'itens'}?`, message: 'Eles voltam para a lista de pendentes.', confirm: 'Desmarcar' })) return
+    queueWrite(commitInChunks(items.map(e => b => b.update(entryRef(e.id), { checked: false }))), 'desmarcar itens')
+    toast(`${items.length} ${items.length === 1 ? 'item voltou' : 'itens voltaram'} para a lista.`, {
+      action: { label: 'Desfazer', run: () => queueWrite(commitInChunks(items.map(e => b => b.update(entryRef(e.id), { checked: true }))), 'desfazer') },
+    })
   }
 
-  function clearPending() {
-    if (!confirm(`Remover os ${pending.length} itens pendentes?`)) return
-    queueWrite(commitInChunks(pending.map(e => b => b.delete(entryRef(e.id)))), 'limpar itens')
+  // Apaga e oferece "Desfazer": regrava os mesmos documentos (mesmo id, mesmos dados)
+  function removeWithUndo(items, label) {
+    queueWrite(commitInChunks(items.map(e => b => b.delete(entryRef(e.id)))), 'remover itens')
+    const ref = listId
+    toast(label, {
+      action: {
+        label: 'Desfazer',
+        run: () => queueWrite(commitInChunks(items.map(({ id, ...data }) => b =>
+          b.set(doc(db, 'families', familyId, 'lists', ref, 'entries', id), data))), 'desfazer'),
+      },
+    })
+  }
+
+  async function clearPending() {
+    const items = pending
+    if (!await ask({ title: `Remover ${items.length} ${items.length === 1 ? 'item pendente' : 'itens pendentes'}?`, message: 'Os itens já no carrinho continuam.', confirm: 'Remover', danger: true })) return
+    removeWithUndo(items, `${items.length} ${items.length === 1 ? 'item removido' : 'itens removidos'}.`)
   }
 
   // Não espera o servidor: offline a gravação fica na fila e a tela fecha na hora
-  function handleSave(data, { inCart = false } = {}) {
+  async function handleSave(data, { inCart = false } = {}) {
     const col = collection(db, 'families', familyId, 'lists', listId, 'entries')
+    // Item já pendente na lista: soma a quantidade em vez de duplicar (se a pessoa quiser)
+    const twin = !editItem && !inCart && pending.find(e => e.name.trim().toLowerCase() === data.name.trim().toLowerCase())
+    if (twin) {
+      const choice = await ask({
+        title: `"${twin.name}" já está na lista`,
+        message: `Tem ${twin.qty} ${twin.unit} pendente. Somar a quantidade ou deixar dois itens separados?`,
+        confirm: 'Somar quantidade', cancel: 'Deixar separado',
+      })
+      if (choice === null) return
+      if (choice) {
+        const qty = Math.round(((Number(twin.qty) || 0) + (Number(data.qty) || 0)) * 1000) / 1000
+        const price = Number(twin.pricePerUnit) || Number(data.pricePerUnit) || 0
+        queueWrite(updateDoc(entryRef(twin.id), { qty, ...(price ? { pricePerUnit: price, totalPrice: Math.round(price * qty * 100) / 100 } : {}) }), 'somar quantidade')
+        setShowForm(false); setEditItem(null); setPrefillItem(null)
+        toast(`${twin.name}: agora ${qty} ${twin.unit}.`, { tone: 'ok' })
+        return
+      }
+    }
     if (editItem) {
       queueWrite(updateDoc(entryRef(editItem.id), data), 'salvar item')
     } else {
@@ -243,7 +280,9 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   }
 
   function handleDelete(id) {
-    queueWrite(deleteDoc(entryRef(id)), 'remover item')
+    const entry = entries.find(e => e.id === id)
+    if (!entry) return
+    removeWithUndo([entry], `"${entry.name}" removido.`)
   }
 
   function finishShopping() {
@@ -254,7 +293,9 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     setSaving(true)
     const mercadoName = mercado.trim() || 'Não informado'
     const today = localDate()
-    const historyRef = doc(collection(db, 'families', familyId, 'history'))
+    // Id derivado dos itens: dois aparelhos (ou toque duplo) finalizando o mesmo carrinho
+    // gravam o mesmo registro em vez de duplicar a compra
+    const historyRef = doc(db, 'families', familyId, 'history', purchaseId(listId, checked.map(e => e.id)))
     const ops = [
       b => b.set(historyRef, {
         createdAt: serverTimestamp(),
@@ -290,6 +331,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     // Enfileira tudo de uma vez: offline a compra fica salva e sobe quando a conexão voltar
     queueWrite(commitInChunks(ops), 'registrar compra')
     setFinishing(false); setMercado(''); setSaving(false)
+    toast(`Compra registrada: ${fmt(totalChecked)}${navigator.onLine ? '' : ' (sobe quando a internet voltar)'}.`, { tone: 'ok' })
     clearShopping()
   }
 
@@ -305,7 +347,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
           <p className="text-gray-400 text-sm mb-4">{checked.length} itens · {fmt(totalChecked)}</p>
           <button onClick={() => { setFinishing(false); setShowNfce(true) }}
             className="w-full bg-gray-800 border border-green-500/40 text-green-300 font-semibold py-3 rounded-xl text-sm mb-4 flex items-center justify-center gap-2">
-            📷 Ler nota fiscal
+            <IconCamera size={16} /> Ler nota fiscal
           </button>
           <p className="text-gray-600 text-xs text-center mb-3">ou registre manualmente</p>
           {othersOnList.length > 0 && (
@@ -372,22 +414,12 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
           onSaved={({ removed, leftChecked, reconciled }) => {
             setShowNfce(false)
             clearShopping()
-            setNotice(reconciled
+            toast(reconciled
               ? 'Compra conciliada com a nota fiscal. Valores atualizados, sem duplicar.'
-              : `Compra registrada pela nota. ${removed} ${removed === 1 ? 'item saiu' : 'itens saíram'} da lista${leftChecked ? `; ${leftChecked} marcado(s) não estavam na nota e continuam na lista` : ''}.`)
-            setTimeout(() => setNotice(''), 7000)
+              : `Compra registrada pela nota. ${removed} ${removed === 1 ? 'item saiu' : 'itens saíram'} da lista${leftChecked ? `; ${leftChecked} marcado(s) não estavam na nota e continuam na lista` : ''}.`,
+            { tone: 'ok', duration: 7000 })
           }}
         />
-      )}
-      {notice && (
-        <div className="fixed top-3 inset-x-3 z-[60] max-w-lg mx-auto bg-green-600/95 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl" onClick={() => setNotice('')}>
-          {notice}
-        </div>
-      )}
-      {writeError && (
-        <div className="fixed top-3 inset-x-3 z-[60] max-w-lg mx-auto bg-red-500/90 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl">
-          Não foi possível {writeError.what}. Tente de novo.
-        </div>
       )}
     </>
   )
@@ -433,9 +465,10 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       {/* List */}
       <div className="flex-1 overflow-y-auto pb-28">
         {entries.length === 0 && (
-          <div className="text-center text-gray-600 mt-24">
-            <div className="text-4xl mb-3">🛒</div>
-            <p className="text-sm">Nenhum item na lista</p>
+          <div className="text-center mt-20 px-8">
+            <IconBadge><IconCart size={24} /></IconBadge>
+            <p className="text-white text-sm font-medium mt-4">Lista vazia</p>
+            <p className="text-gray-500 text-xs mt-1">Adicione o que precisa comprar. Quem está na família vê na hora.</p>
           </div>
         )}
 
@@ -463,10 +496,10 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
 
         {checked.length > 0 && (
           <div>
-            <button onClick={() => setShowChecked(v => !v)}
-              className="flex items-center justify-between w-full px-4 pt-4 pb-1 text-gray-600">
+            <button onClick={() => setShowChecked(v => !v)} aria-expanded={showChecked}
+              className="flex items-center justify-between w-full px-4 pt-3 min-h-11 text-gray-600">
               <span className="text-xs uppercase tracking-wider">Peguei ({checked.length}) · {fmt(totalChecked)}</span>
-              <span className="text-xs">{showChecked ? '▼' : '▶'}</span>
+              {showChecked ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
             </button>
             {showChecked && groupBy(checked).map(({ cat, items }) => (
               <div key={cat} className="opacity-50">
@@ -529,14 +562,17 @@ function cheaperHint(entry, catalogItem) {
 
 function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked, priceDiff, cheaper }) {
   return (
-    <div className={`flex items-center gap-3 px-4 py-2.5 ${!isLast ? 'border-b border-gray-800/60' : ''}`}>
-      <button onClick={onCheck}
-        className={`w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0 transition-all
+    <div className={`flex items-center gap-1 px-4 py-1 ${!isLast ? 'border-b border-gray-800/60' : ''}`}>
+      {/* Área de toque de 44px; o círculo visível continua pequeno */}
+      <button onClick={onCheck} aria-label={isChecked ? `Desmarcar ${entry.name}` : `Marcar ${entry.name} como pego`} aria-pressed={!!isChecked}
+        className="-ml-3 w-11 h-11 flex items-center justify-center flex-shrink-0">
+        <span className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors
           ${isChecked ? 'bg-green-500 border-green-500' : 'border-gray-600'}`}>
-        {isChecked && <IconCheck size={10} />}
+          {isChecked && <IconCheck size={12} />}
+        </span>
       </button>
 
-      <div className="flex-1 min-w-0 cursor-pointer" onClick={onEdit}>
+      <div className="flex-1 min-w-0 cursor-pointer py-1.5" onClick={onEdit}>
         <span className={`text-sm ${isChecked ? 'line-through text-gray-600' : 'text-white'}`}>{entry.name}</span>
         {entry.brand && <span className="text-[10px] text-gray-300 bg-gray-800 border border-gray-700 px-1.5 py-0.5 rounded ml-2 align-middle">{entry.brand}</span>}
         {entry.obs && <span className="text-gray-600 text-xs ml-2">{entry.obs}</span>}
@@ -562,7 +598,7 @@ function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked
             {Number(entry.totalPrice).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </span>
         )}
-        <button onClick={onDelete} className="text-gray-500 hover:text-gray-300 p-1">
+        <button onClick={onDelete} aria-label={`Remover ${entry.name}`} className="text-gray-500 hover:text-gray-300 w-10 h-11 -mr-3 flex items-center justify-center">
           <IconX size={14} />
         </button>
       </div>

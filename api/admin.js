@@ -5,7 +5,7 @@ import { getAuth } from 'firebase-admin/auth'
 import { logError } from './_lib/errlog.js'
 import { getFirestore } from 'firebase-admin/firestore'
 import { getMessaging } from 'firebase-admin/messaging'
-import { AdminError, isAdminEmail, overview, familyDetail, setPlan, listFeedback, setFeedbackStatus } from './_lib/admin-core.js'
+import { AdminError, isAdminEmail, isRecentLogin, overview, familyDetail, setPlan, listFeedback, setFeedbackStatus, audit, listAudit } from './_lib/admin-core.js'
 import { notifyResolved } from './_lib/support-core.js'
 import { listErrors, clearErrorGroup } from './_lib/errlog.js'
 
@@ -36,22 +36,38 @@ export default async function handler(req, res) {
     // "whoami" responde a qualquer um (só diz se é admin), para o app mostrar ou não o atalho
     if (body.action === 'whoami') return res.status(200).json({ admin })
     if (!admin) return res.status(403).json({ error: 'Acesso restrito' })
+    // Painel exige login recente: sessão esquecida aberta num computador não dá acesso para sempre
+    if (!isRecentLogin(token)) return res.status(401).json({ error: 'Por segurança, entre de novo no painel.', reauth: true })
 
     const fs = getFirestore()
     const auth = getAuth()
     switch (body.action) {
       case 'overview': return res.status(200).json(await overview({ fs, auth }))
       case 'family': return res.status(200).json(await familyDetail({ fs, auth, familyId: body.familyId }))
-      case 'setPlan': return res.status(200).json(await setPlan({ fs, familyId: body.familyId, plan: body.plan, adminEmail: token.email }))
+      case 'setPlan': {
+        const r = await setPlan({ fs, familyId: body.familyId, plan: body.plan, adminEmail: token.email })
+        await audit(fs, { email: token.email, action: body.plan ? 'Plano alterado' : 'Plano removido', target: body.familyId, details: body.plan || null })
+        return res.status(200).json(r)
+      }
+      case 'audit': return res.status(200).json({ audit: await listAudit({ fs }) })
       case 'feedback': return res.status(200).json({ feedback: await listFeedback({ fs }) })
       case 'errors': return res.status(200).json(await listErrors(fs, { days: Number(body.days) || 7 }))
-      case 'clearErrors': return res.status(200).json(await clearErrorGroup(fs, body.fp))
-      case 'feedbackStatus': return res.status(200).json(await setFeedbackStatus({
-        fs, id: body.id, status: body.status, note: body.note, reply: body.reply, adminEmail: token.email,
-        // Resolvido: cartão no app + push "Sua solicitação foi atendida" (falha no push não desfaz a mudança)
-        onResolved: ({ feedback, reply }) => notifyResolved({ fs, messaging: getMessaging(), feedback, reply })
-          .catch(e => { console.error('support notify', e); return { pushed: 0, error: true } }),
-      }))
+      case 'clearErrors': {
+        const r = await clearErrorGroup(fs, body.fp)
+        await audit(fs, { email: token.email, action: 'Erro marcado como resolvido', target: body.fp, details: { apagados: r.deleted } })
+        return res.status(200).json(r)
+      }
+      case 'feedbackStatus': {
+        const r = await setFeedbackStatus({
+          fs, id: body.id, status: body.status, note: body.note, reply: body.reply, adminEmail: token.email,
+          // Resolvido: cartão no app + push "Sua solicitação foi atendida" (falha no push não desfaz a mudança)
+          onResolved: ({ feedback, reply }) => notifyResolved({ fs, messaging: getMessaging(), feedback, reply })
+            .catch(e => { console.error('support notify', e); return { pushed: 0, error: true } }),
+        })
+        const label = { new: 'reaberto', doing: 'em andamento', done: 'resolvido' }[body.status] || body.status
+        await audit(fs, { email: token.email, action: `Suporte: ${label}`, target: body.id, details: body.reply ? { resposta: String(body.reply).slice(0, 200) } : null })
+        return res.status(200).json(r)
+      }
       default: return res.status(400).json({ error: 'Pedido inválido' })
     }
   } catch (e) {

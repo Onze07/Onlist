@@ -425,12 +425,47 @@ function ErrorsList({ onChanged }) {
   )
 }
 
+// Histórico: quem fez o quê no painel (planos, suporte, erros)
+function AuditList({ families }) {
+  const [items, setItems] = useState(null)
+  const [error, setError] = useState('')
+  useEffect(() => { adminApi('audit').then(r => setItems(r.audit)).catch(e => setError(e.message)) }, [])
+  const names = Object.fromEntries((families || []).map(f => [f.id, f.name]))
+  if (error) return <p className="text-red-300 text-sm">{error}</p>
+  if (!items) return <div className="py-24 flex justify-center"><Spinner /></div>
+  if (items.length === 0) return <p className="text-gray-500 text-sm">Nenhuma ação registrada ainda.</p>
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="text-gray-500 text-xs text-left border-b border-gray-800">
+          <tr><th className="font-medium px-4 py-2.5">Quando</th><th className="font-medium px-4 py-2.5">Quem</th><th className="font-medium px-4 py-2.5">Ação</th><th className="font-medium px-4 py-2.5">Sobre</th></tr>
+        </thead>
+        <tbody className="divide-y divide-gray-800">
+          {items.map(a => (
+            <tr key={a.id}>
+              <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap">{a.at ? new Date(a.at).toLocaleString('pt-BR') : '—'}</td>
+              <td className="px-4 py-2.5 text-gray-300">{a.email || '—'}</td>
+              <td className="px-4 py-2.5 text-white">{a.action}</td>
+              <td className="px-4 py-2.5 text-gray-400">
+                {names[a.target] || a.target || '—'}
+                {a.details?.name && <span className="text-gray-500"> · {a.details.name}{a.details.price !== undefined ? ` · ${fmtMoney(a.details.price)}` : ''}</span>}
+                {a.details?.resposta && <span className="text-gray-500"> · “{a.details.resposta}”</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 const NAV = [
   { id: 'overview', label: 'Visão geral', icon: '◧' },
   { id: 'families', label: 'Famílias', icon: '⌂' },
   { id: 'nofamily', label: 'Sem família', icon: '◌' },
   { id: 'feedback', label: 'Suporte', icon: '✉' },
   { id: 'errors', label: 'Erros', icon: '⚠' },
+  { id: 'audit', label: 'Histórico', icon: '☰' },
 ]
 
 export default function AdminPanel({ user, onSignOut }) {
@@ -628,6 +663,7 @@ export default function AdminPanel({ user, onSignOut }) {
         )}
 
         {tab === 'errors' && <ErrorsList onChanged={load} />}
+        {tab === 'audit' && <AuditList families={data?.families} />}
         {tab === 'feedback' && <SupportList feedback={feedback} onChanged={() => { setFeedback(null); load() }} />}
       </main>
 

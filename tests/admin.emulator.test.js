@@ -118,6 +118,7 @@ test('só e-mails da lista de admins entram', () => {
   assert.equal(isAdminEmail({ email: 'ana@x.com', email_verified: true }, env), false)
   assert.equal(isAdminEmail({ email: 'outro@x.com', email_verified: false }, env), false)
   assert.equal(isAdminEmail({ email: 'assessoria@onze07.com' }, ''), false)
+  assert.equal(isAdminEmail({ email: 'assessoria@onze07.com' }, env), false) // sem e-mail verificado
 })
 
 test('suporte: mensagem pelo servidor só aceita família de quem é membro', async () => {
@@ -155,6 +156,9 @@ import { logError, listErrors, clearErrorGroup, sanitize, fingerprint } from '..
 
 test('erros: sem dados pessoais e mesma falha no mesmo grupo', () => {
   assert.equal(sanitize('CPF 013.586.362-73 e 01358636273'), 'CPF [cpf] e [cpf]')
+  assert.equal(sanitize('CPF 013 586 362 73.'), 'CPF [cpf].')
+  const chave = '11260904123456000189650010000012341000012345'
+  assert.equal(sanitize(`chave ${chave}`), `chave ${chave}`) // chave de 44 dígitos fica
   assert.equal(sanitize('img base64,AAAA== fim'), 'img base64,[img] fim')
   assert.equal(fingerprint({ source: 'nfce', kind: 'layout', message: 'Nota 123 falhou' }), fingerprint({ source: 'nfce', kind: 'layout', message: 'Nota 456 falhou' }))
   assert.notEqual(fingerprint({ source: 'app', kind: 'x', message: 'a' }), fingerprint({ source: 'nfce', kind: 'x', message: 'a' }))
@@ -177,4 +181,24 @@ test('erros: grava, agrupa por falha, conta pessoas e resolve', async () => {
   assert.equal((await overview({ fs, auth })).kpis.errors24h, 3)
   assert.equal((await clearErrorGroup(fs, nf.fp)).deleted, 2)
   assert.equal((await listErrors(fs, { days: 1 })).groups.length, 1)
+})
+
+// --- Segurança do painel ---
+import { isRecentLogin, audit, listAudit } from '../api/_lib/admin-core.js'
+
+test('painel: login vale 12 horas', () => {
+  const now = Date.parse('2026-10-14T12:00:00Z')
+  assert.equal(isRecentLogin({ auth_time: now / 1000 - 3600 }, now), true)
+  assert.equal(isRecentLogin({ auth_time: now / 1000 - 13 * 3600 }, now), false)
+  assert.equal(isRecentLogin({}, now), false)
+})
+
+test('painel: histórico das ações do admin, mais recente primeiro', async () => {
+  await fs.recursiveDelete(fs.collection('adminAudit'))
+  await audit(fs, { email: 'eli@x.com', action: 'Plano alterado', target: 'f1', details: { name: 'Fundador', price: 0 } })
+  await audit(fs, { email: 'eli@x.com', action: 'Suporte: resolvido', target: 'fb1' })
+  const list = await listAudit({ fs })
+  assert.equal(list.length, 2)
+  assert.equal(list[0].action, 'Suporte: resolvido')
+  assert.equal(list[1].details.name, 'Fundador')
 })

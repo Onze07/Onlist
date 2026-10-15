@@ -1,6 +1,7 @@
 // Troca de família ("entrar em outra família"), com opção de levar os dados.
 // Recebe o Firestore do Admin SDK para poder ser testado no emulador.
 import { FieldValue } from 'firebase-admin/firestore'
+import { assertNotBlocked, registerFail, resetFails, RateLimitError, waitText } from './ratelimit.js'
 
 export const DEFAULT_SEATS = 20
 const PRICE_HISTORY_MAX = 60
@@ -84,7 +85,8 @@ export async function mergeFamilyData(fs, fromFid, toFid, ownerName) {
   for (const list of await readAll(from.collection('lists'))) {
     const entries = await readAll(list.ref.collection('entries'))
     if (entries.length === 0) continue
-    const newList = to.collection('lists').doc()
+    // Id fixo: se a troca for retomada depois de uma falha, a lista não é copiada duas vezes
+    const newList = to.collection('lists').doc(`m_${fromFid}_${list.id}`)
     writer.set(newList, { ...list.data(), name: `${list.data().name || 'Lista'} (de ${firstName(ownerName)})` })
     for (const e of entries) writer.set(newList.collection('entries').doc(e.id), e.data())
     stats.lists++
@@ -121,7 +123,11 @@ export async function switchFamily({ fs, uid, profile, code, mode }) {
   const userRef = fs.doc(`users/${uid}`)
   const userSnap = await userRef.get()
   const oldFid = userSnap.exists ? userSnap.data().familyId || null : null
-  if (oldFid === newFid) throw new FamilyError(400, 'Você já está nesta família')
+  if (oldFid === newFid) {
+    // Troca interrompida no meio (queda do servidor): termina em vez de recusar
+    if ((await fs.doc(`moves/${uid}`).get()).exists) return resumeMove({ fs, uid, profile })
+    throw new FamilyError(400, 'Você já está nesta família')
+  }
 
   let old = null
   if (oldFid) {
@@ -151,22 +157,92 @@ export async function switchFamily({ fs, uid, profile, code, mode }) {
       joinedAt: FieldValue.serverTimestamp(),
       lastSeenAt: FieldValue.serverTimestamp(),
     }, { merge: true })
-    tx.set(userRef, { familyId: newFid, joinCode: FieldValue.delete() }, { merge: true })
+    tx.set(userRef, { familyId: newFid, joinCode: FieldValue.delete(), movePending: old ? true : FieldValue.delete() }, { merge: true })
+    // Anota a saída da família antiga em moves/{uid} (só o servidor lê/grava; o app não consegue
+    // forjar). Se algo falhar depois daqui, resumeMove termina o serviço.
+    if (old) tx.set(fs.doc(`moves/${uid}`), { from: oldFid, to: newFid, owner: isOwner, mode, at: FieldValue.serverTimestamp() })
   })
 
+  const stats = old ? await leaveOld(fs, uid, { from: oldFid, to: newFid, owner: isOwner, mode }, profile) : null
+  return { familyId: newFid, merged: stats }
+}
+
+// Sai da família antiga (copiando os dados, se pedido). Pode rodar mais de uma vez sem duplicar nada.
+async function leaveOld(fs, uid, move, profile) {
   let stats = null
-  if (old) {
-    if (isOwner) {
-      if (mode === 'merge') stats = await mergeFamilyData(fs, oldFid, newFid, profile?.name)
-      await deleteFamily(fs, oldFid)
-    } else {
-      const oldRef = fs.doc(`families/${oldFid}`)
-      const batch = fs.batch()
-      batch.update(oldRef, { members: FieldValue.arrayRemove(uid), admins: FieldValue.arrayRemove(uid) })
-      batch.delete(oldRef.collection('profiles').doc(uid))
-      batch.delete(oldRef.collection('presence').doc(uid))
-      await batch.commit()
+  const oldRef = fs.doc(`families/${move.from}`)
+  if (move.owner) {
+    if ((await oldRef.get()).exists) {
+      if (move.mode === 'merge') stats = await mergeFamilyData(fs, move.from, move.to, profile?.name)
+      await deleteFamily(fs, move.from)
+    }
+  } else if ((await oldRef.get()).exists) {
+    const batch = fs.batch()
+    batch.update(oldRef, { members: FieldValue.arrayRemove(uid), admins: FieldValue.arrayRemove(uid) })
+    batch.delete(oldRef.collection('profiles').doc(uid))
+    batch.delete(oldRef.collection('presence').doc(uid))
+    await batch.commit()
+  }
+  await fs.doc(`moves/${uid}`).delete()
+  await fs.doc(`users/${uid}`).set({ movePending: FieldValue.delete() }, { merge: true })
+  return stats
+}
+
+// Termina uma troca de família que parou no meio
+export async function resumeMove({ fs, uid, profile }) {
+  const snap = await fs.doc(`moves/${uid}`).get()
+  const move = snap.exists ? snap.data() : null
+  if (!move?.from) {
+    await fs.doc(`users/${uid}`).set({ movePending: FieldValue.delete() }, { merge: true })
+    return { familyId: null, merged: null }
+  }
+  const stats = await leaveOld(fs, uid, move, profile)
+  return { familyId: move.to, merged: stats }
+}
+
+// Exclusão de conta pelo servidor: apaga tudo de uma vez, mesmo se o app fechar no meio.
+// Dono sozinho: apaga a família inteira. Membro: só sai. Dono com outros membros: recusa.
+export async function deleteAccount({ fs, auth, uid }) {
+  const userRef = fs.doc(`users/${uid}`)
+  const userSnap = await userRef.get()
+  const fid = userSnap.exists ? userSnap.data().familyId || null : null
+  if (fid) {
+    const famRef = fs.doc(`families/${fid}`)
+    const fam = await famRef.get()
+    if (fam.exists && (fam.data().members || []).includes(uid)) {
+      const members = fam.data().members || []
+      if (fam.data().createdBy === uid) {
+        if (members.length > 1) throw new FamilyError(409, 'Você é o dono da família. Passe a posse ou remova os outros membros antes de excluir sua conta.')
+        await deleteFamily(fs, fid)
+      } else {
+        const batch = fs.batch()
+        batch.update(famRef, { members: FieldValue.arrayRemove(uid), admins: FieldValue.arrayRemove(uid) })
+        batch.delete(famRef.collection('profiles').doc(uid))
+        batch.delete(famRef.collection('presence').doc(uid))
+        await batch.commit()
+      }
     }
   }
-  return { familyId: newFid, merged: stats }
+  await fs.recursiveDelete(userRef)
+  await fs.doc(`moves/${uid}`).delete()
+  await auth.deleteUser(uid).catch(e => { if (e?.code !== 'auth/user-not-found') throw e })
+  return { deleted: true, familyId: fid }
+}
+
+// Entrar com código passando pelo limite de tentativas: código errado conta como erro e,
+// a partir do 5º, bloqueia por 1 min, 2, 4, 8... Acertar zera a contagem.
+export async function joinWithCode({ fs, uid, profile, code, mode, now = Date.now() }) {
+  const key = `join_${uid}`
+  await assertNotBlocked(fs, key, now)
+  try {
+    const result = await switchFamily({ fs, uid, profile, code, mode })
+    await resetFails(fs, key)
+    return result
+  } catch (e) {
+    const wrongCode = e instanceof FamilyError && (e.status === 404 || e.message === 'Código inválido')
+    if (!wrongCode) throw e
+    const { blockSec } = await registerFail(fs, key, undefined, now)
+    if (blockSec) throw new RateLimitError(`Código não encontrado. Por segurança, aguarde ${waitText(blockSec)} antes de tentar de novo.`, blockSec)
+    throw e
+  }
 }

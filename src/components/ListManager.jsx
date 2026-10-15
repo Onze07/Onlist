@@ -4,6 +4,7 @@ import { db } from '../firebase'
 import { commitInChunks } from '../lib/firestore'
 import { useFamily } from '../context/FamilyContext'
 import { IconEdit, IconTrash, IconArchive, IconUnarchive, IconX } from './Icon'
+import { ask, showError, toast } from '../lib/feedback'
 
 export default function ListManager({ activeListId, onSelect, onClose }) {
   const { familyId } = useFamily()
@@ -40,16 +41,18 @@ export default function ListManager({ activeListId, onSelect, onClose }) {
 
   async function renameList(id, name) {
     if (!name.trim()) return
-    await updateDoc(doc(db, 'families', familyId, 'lists', id), { name: name.trim() })
-    if (id === activeListId) onSelect(id, name.trim())
-    setEditingId(null)
+    try {
+      await updateDoc(doc(db, 'families', familyId, 'lists', id), { name: name.trim() })
+      if (id === activeListId) onSelect(id, name.trim())
+      setEditingId(null)
+    } catch (e) { showError(e, 'renomear a lista') }
   }
 
   // Evita deixar a tela principal apontando para uma lista arquivada/excluída
   function nextActiveList(id) {
     const next = active.find(l => l.id !== id)
     if (id === activeListId && !next) {
-      alert('Crie outra lista antes. Esta é a única lista ativa.')
+      toast('Crie outra lista antes. Esta é a única lista ativa.', { tone: 'error' })
       return undefined
     }
     return next || null
@@ -58,18 +61,20 @@ export default function ListManager({ activeListId, onSelect, onClose }) {
   async function archiveList(id) {
     const next = nextActiveList(id)
     if (next === undefined) return
-    await updateDoc(doc(db, 'families', familyId, 'lists', id), { status: 'archived' })
-    if (id === activeListId) onSelect(next.id, next.name)
+    try {
+      await updateDoc(doc(db, 'families', familyId, 'lists', id), { status: 'archived' })
+      if (id === activeListId) onSelect(next.id, next.name)
+    } catch (e) { showError(e, 'arquivar a lista') }
   }
 
   async function unarchiveList(id) {
-    await updateDoc(doc(db, 'families', familyId, 'lists', id), { status: 'active' })
+    await updateDoc(doc(db, 'families', familyId, 'lists', id), { status: 'active' }).catch(e => showError(e, 'reativar a lista'))
   }
 
   async function deleteList(id, name) {
     const next = nextActiveList(id)
     if (next === undefined) return
-    if (!confirm(`Excluir a lista "${name}" permanentemente?`)) return
+    if (!await ask({ title: `Excluir a lista "${name}"?`, message: 'Os itens dela também são apagados. Isso não pode ser desfeito.', confirm: 'Excluir lista', danger: true })) return
     try {
       // Firestore não apaga subcoleções sozinho: remove os itens antes da lista
       const listRef = doc(db, 'families', familyId, 'lists', id)
@@ -80,7 +85,7 @@ export default function ListManager({ activeListId, onSelect, onClose }) {
       ])
       if (id === activeListId) onSelect(next.id, next.name)
     } catch (e) {
-      alert('Erro ao excluir: ' + e.message)
+      showError(e, 'excluir a lista')
     }
   }
 
@@ -94,35 +99,35 @@ export default function ListManager({ activeListId, onSelect, onClose }) {
           <input autoFocus value={editingName} onChange={e => setEditingName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') renameList(list.id, editingName); if (e.key === 'Escape') setEditingId(null) }}
             className="flex-1 bg-gray-800 text-white px-3 py-1.5 rounded-lg outline-none text-sm" />
-          <button onClick={() => renameList(list.id, editingName)} className="text-green-400 text-sm font-semibold px-2">OK</button>
-          <button onClick={() => setEditingId(null)} className="text-gray-500 px-1"><IconX /></button>
+          <button onClick={() => renameList(list.id, editingName)} className="text-green-400 text-sm font-semibold px-3 min-h-11">Salvar</button>
+          <button onClick={() => setEditingId(null)} aria-label="Cancelar" className="text-gray-500 min-w-11 min-h-11 flex items-center justify-center"><IconX /></button>
         </div>
       )
     }
 
     return (
-      <div key={list.id} className={`flex items-center gap-3 py-3 border-b border-gray-800 ${isArchived ? 'opacity-50' : ''}`}>
-        <button className="flex-1 text-left" onClick={() => { if (!isArchived) { onSelect(list.id, list.name); onClose() } }}>
+      <div key={list.id} className={`flex items-center gap-3 py-1 border-b border-gray-800 ${isArchived ? 'opacity-50' : ''}`}>
+        <button className="flex-1 text-left min-h-11" onClick={() => { if (!isArchived) { onSelect(list.id, list.name); onClose() } }}>
           <span className={`text-sm ${isActive ? 'text-green-400 font-semibold' : 'text-white'}`}>{list.name}</span>
           {isActive && <span className="text-green-400/60 text-xs ml-2">· ativa</span>}
           {isArchived && <span className="text-gray-500 text-xs ml-2">· arquivada</span>}
         </button>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center -mr-2">
           {!isArchived && (
-            <button onClick={() => { setEditingId(list.id); setEditingName(list.name) }} className="text-gray-400 hover:text-gray-200">
+            <button onClick={() => { setEditingId(list.id); setEditingName(list.name) }} aria-label={`Renomear ${list.name}`} className="text-gray-400 hover:text-gray-200 min-w-11 min-h-11 flex items-center justify-center">
               <IconEdit size={17} />
             </button>
           )}
           {!isArchived ? (
-            <button onClick={() => archiveList(list.id)} className="text-gray-400 hover:text-gray-200">
+            <button onClick={() => archiveList(list.id)} aria-label={`Arquivar ${list.name}`} className="text-gray-400 hover:text-gray-200 min-w-11 min-h-11 flex items-center justify-center">
               <IconArchive size={17} />
             </button>
           ) : (
-            <button onClick={() => unarchiveList(list.id)} className="text-gray-400 hover:text-gray-200">
+            <button onClick={() => unarchiveList(list.id)} aria-label={`Reativar ${list.name}`} className="text-gray-400 hover:text-gray-200 min-w-11 min-h-11 flex items-center justify-center">
               <IconUnarchive size={17} />
             </button>
           )}
-          <button onClick={() => deleteList(list.id, list.name)} className="text-gray-500 hover:text-red-400">
+          <button onClick={() => deleteList(list.id, list.name)} aria-label={`Excluir ${list.name}`} className="text-gray-500 hover:text-red-400 min-w-11 min-h-11 flex items-center justify-center">
             <IconTrash size={17} />
           </button>
         </div>
@@ -147,7 +152,7 @@ export default function ListManager({ activeListId, onSelect, onClose }) {
               placeholder="Nome da lista"
               className="flex-1 bg-gray-800 text-white px-3 py-2 rounded-lg outline-none text-sm" />
             <button onClick={createList} className="bg-green-500 text-white px-4 rounded-lg text-sm font-semibold">Criar</button>
-            <button onClick={() => setCreating(false)} className="text-gray-500 px-2"><IconX /></button>
+            <button onClick={() => setCreating(false)} aria-label="Cancelar" className="text-gray-500 min-w-11 min-h-11 flex items-center justify-center"><IconX /></button>
           </div>
         )}
 

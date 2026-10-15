@@ -1,4 +1,4 @@
-import { normalizePriceHistory } from './format.js'
+import { localDate, normalizePriceHistory } from './format.js'
 
 const NOT_INFORMED = 'não informado'
 
@@ -26,6 +26,10 @@ export function cheapest(history = []) {
   return latestByMarket(history)[0] || null
 }
 
+// Variação de 3x ou mais entre duas compras: quase sempre preço lançado errado
+// (caixa no lugar da unidade, vírgula trocada). Fica fora do "subiram/caíram" e pede conferência.
+export const OUTLIER_RATIO = 3
+
 // Variação entre as duas últimas compras do item
 export function trend(history = []) {
   const purchases = normalizePriceHistory(history)
@@ -33,7 +37,33 @@ export function trend(history = []) {
   const last = purchases[purchases.length - 1]
   const prev = purchases[purchases.length - 2]
   const diff = last.price - prev.price
-  return { last, prev, diff, pct: prev.price ? diff / prev.price : 0 }
+  const ratio = prev.price ? last.price / prev.price : 1
+  const outlier = ratio >= OUTLIER_RATIO || ratio <= 1 / OUTLIER_RATIO
+  return { last, prev, diff, pct: prev.price ? diff / prev.price : 0, outlier }
+}
+
+const dayShift = (date, days) => {
+  const d = new Date(`${date}T12:00:00`)
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// Tira do histórico o preço que veio de uma compra (mesmo preço, mercado e data).
+// Sem nada na data exata, aceita 1 dia de diferença (compra finalizada perto da meia-noite).
+export function withoutPurchase(history = [], { price, mercado, date }) {
+  const list = Array.isArray(history) ? history : []
+  const same = h => Math.abs(Number(h?.price) - Number(price)) < 0.005 && marketKey(h?.mercado) === marketKey(mercado)
+  for (const dates of [[date], [dayShift(date, -1), dayShift(date, 1)]]) {
+    const removed = list.filter(h => same(h) && dates.includes(h.date))
+    if (removed.length) return { history: list.filter(h => !removed.includes(h)), removed }
+  }
+  return { history: list, removed: [] }
+}
+
+// Último preço pago (compra mais recente) ou null
+export function lastPriceOf(history = []) {
+  const list = normalizePriceHistory(history)
+  return list.length ? Number(list[list.length - 1].price) : null
 }
 
 // Quanto a lista custaria em cada mercado, pelo último preço pago lá.
@@ -71,4 +101,30 @@ export function trimPriceHistory(history = [], entry, max = PRICE_HISTORY_MAX) {
   const current = normalizePriceHistory(history)
   if (current.length < max) return null
   return [...current.slice(-(max - 1)), entry]
+}
+
+// Preços que uma compra lançou no catálogo: [{ key, removed, history (sem eles), lastPrice }]
+// catalog: { [chave]: { priceHistory } }. A data vem de createdAt (Timestamp ou Date).
+export function pricesOfPurchase(record, catalog = {}) {
+  const at = record?.createdAt?.toDate?.() || (record?.createdAt instanceof Date ? record.createdAt : null)
+  const date = localDate(at || new Date())
+  const byKey = new Map()
+  for (const item of record?.items || []) {
+    if (!(Number(item.pricePerUnit) > 0) || !item.name) continue
+    const key = String(item.name).toLowerCase()
+    if (!byKey.has(key)) byKey.set(key, [])
+    byKey.get(key).push(Number(item.pricePerUnit))
+  }
+  const out = []
+  for (const [key, prices] of byKey) {
+    let history = catalog[key]?.priceHistory || []
+    const removed = []
+    for (const price of prices) {
+      const r = withoutPurchase(history, { price, mercado: record.mercado, date })
+      history = r.history
+      removed.push(...r.removed)
+    }
+    if (removed.length) out.push({ key, removed, history, lastPrice: lastPriceOf(history) })
+  }
+  return out
 }

@@ -175,3 +175,41 @@ test('consulta pela chave: endereços só para RO', () => {
   assert.ok(urls.every(u => u.includes('nfce.sefin.ro.gov.br') && u.includes('11261010581332000160651110000118871999881120')))
   assert.deepEqual(keyConsultUrls('35261010581332000160651110000118871999881120'), [])
 })
+
+test('data de emissão em outros formatos', () => {
+  const p = html => parseNfce(`<div>${html}</div>`).issuedAt
+  assert.equal(p('<li>Emissão: 03/10/2026 11:38:07 - Via Consumidor</li>'), '2026-10-03T11:38:07-03:00')
+  assert.equal(p('Número 11887 Série 111 Emissão 10/10/26 18:06:00'), '2026-10-10T18:06:00-03:00')
+  assert.equal(p('Data de Emissão: 05/09/2026 às 09:15'), '2026-09-05T09:15:00-03:00')
+  assert.equal(p('Emissão: 05/09/2026'), '2026-09-05T12:00:00-03:00')
+})
+
+// --- Segurança: servidor só acessa portais .gov.br ---
+test('consulta: só endereços oficiais .gov.br (inclusive os que voltam do app)', async () => {
+  process.env.FIREBASE_SERVICE_ACCOUNT ||= ''
+  const { isGovUrl } = await import('../api/nfce.js')
+  assert.equal(isGovUrl('http://www.nfce.sefin.ro.gov.br/consultanfce/dados_nfce.jsp'), true)
+  assert.equal(isGovUrl('https://evil.com/?x=.gov.br'), false)
+  assert.equal(isGovUrl('http://sefin.ro.gov.br.evil.com/'), false)
+  assert.equal(isGovUrl('http://169.254.169.254/latest/meta-data'), false)
+  assert.equal(isGovUrl('file:///etc/passwd'), false)
+  assert.equal(isGovUrl('http://user:pass@nfce.sefin.ro.gov.br/'), false)
+  assert.equal(isGovUrl(undefined), false)
+  assert.equal(isGovUrl('https://nfce.sefin.ro.gov.br:8443/'), false) // porta explícita
+})
+
+test('sessão do captcha: assinada, presa ao usuário e com validade', async () => {
+  const { sealSession, openSession } = await import('../api/nfce.js')
+  const key = Buffer.alloc(32, 7)
+  const t0 = Date.parse('2026-10-14T12:00:00Z')
+  const s = sealSession({ csrf: 'x', action: 'https://nfce.sefin.ro.gov.br/a' }, 'ana', t0, key)
+  assert.equal(openSession(s, 'ana', t0 + 60_000, key).csrf, 'x')
+  assert.equal(openSession(s, 'leo', t0 + 60_000, key), null)            // outro usuário
+  assert.equal(openSession(s, 'ana', t0 + 16 * 60_000, key), null)       // vencida
+  assert.equal(openSession(s, 'ana', t0, Buffer.alloc(32, 8)), null)     // outra chave
+  const [payload, sig] = s.split('.')
+  const forged = Buffer.from(JSON.stringify({ action: 'http://169.254.169.254/', uid: 'ana', exp: t0 + 1e9 })).toString('base64url')
+  assert.equal(openSession(`${forged}.${sig}`, 'ana', t0, key), null)    // conteúdo trocado
+  assert.equal(openSession(payload, 'ana', t0, key), null)               // sem assinatura
+  assert.equal(openSession(undefined, 'ana', t0, key), null)
+})

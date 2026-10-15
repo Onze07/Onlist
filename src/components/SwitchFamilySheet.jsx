@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Sheet from './Sheet'
 import { useFamily } from '../context/FamilyContext'
 import { clearPendingInvite } from '../lib/invite'
+import { ask } from '../lib/feedback'
 
 // Entrar em outra família já tendo uma (ex.: o casal criou uma família cada um)
 export default function SwitchFamilySheet({ initialCode = '', onClose }) {
@@ -23,8 +24,11 @@ export default function SwitchFamilySheet({ initialCode = '', onClose }) {
 
   async function submit() {
     if (!valid || busy) return
-    if (isOwner && mode === 'fresh'
-      && !confirm(`As listas, o catálogo e os registros de "${familyName}" serão apagados para sempre. Continuar?`)) return
+    if (isOwner && mode === 'fresh' && !await ask({
+      title: `Apagar os dados de "${familyName}"?`,
+      message: 'As listas, o catálogo e os registros dela serão apagados para sempre.',
+      confirm: 'Apagar e entrar', danger: true,
+    })) return
     setBusy(true)
     setError('')
     try {

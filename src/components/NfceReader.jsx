@@ -1,17 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { collection, doc, getDoc, getDocs, query, serverTimestamp, Timestamp, where } from 'firebase/firestore'
+import { arrayRemove, collection, deleteField, doc, getDoc, getDocs, query, serverTimestamp, Timestamp, where } from 'firebase/firestore'
 import { db } from '../firebase'
 import { apiPost } from '../lib/api'
 import { commitInChunks, priceHistoryWrite, queueWrite } from '../lib/firestore'
 import { convertForUnit, findSimilarPurchases, mapUnit, marketName, packSize, suggestTarget, UNITS, UNIT_LABELS } from '../lib/nfceMatch'
 import QrScanner from './QrScanner'
+import { CATEGORIES, suggestCategory } from '../lib/categories'
 import { addPendingNote, isContingencyKey, keyFromUrl, listPendingNotes, removePendingNote } from '../lib/pendingNotes'
 import { parseAccessKey } from '../../api/_lib/nfce-parse.js'
+import { ask, showError } from '../lib/feedback'
+import { pricesOfPurchase } from '../lib/prices'
+import { IconBadge, IconReceipt } from './Icon'
 
 // Link do QR (http...) ou chave de acesso digitada/colada (44 números, com ou sem espaços)
 const isLink = s => /^\s*https?:\/\//i.test(String(s || ''))
 
-const CATEGORIES = ['Hortifruti', 'Carne', 'Laticínios', 'Mercearia', 'Padaria', 'Limpeza', 'Higiene', 'Bebidas', 'Outros']
+// Data local AAAA-MM-DD (toISOString usaria UTC e viraria o dia à noite)
+const localDateStr = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
 
 function fmt(n) {
   return (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -39,6 +45,8 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
   const [nota, setNota] = useState(null)
   const [rows, setRows] = useState([])
   const [mercado, setMercado] = useState('')
+  // Data da compra (AAAA-MM-DD): vem da nota; se a SEFAZ não mostrar, o usuário confirma
+  const [purchaseDate, setPurchaseDate] = useState('')
   const [mappings, setMappings] = useState({})
   const [lastUrl, setLastUrl] = useState('')
   // Nota que a SEFAZ ainda não mostra (ex.: contingência): oferecer "ler depois"
@@ -145,6 +153,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
     if (!reconcileWith && found.similar?.[0]?.strong) setReconcileId(found.similar[0].record.id)
     setNota(n)
     setMercado(marketName(n.store, mercadoOptions))
+    setPurchaseDate(n.issuedAt ? n.issuedAt.slice(0, 10) : localDateStr(new Date()))
     setRows(n.items.map(item => {
       const s = suggestTarget(item, catalogItems, mappings)
       const size = packSize(item.name)
@@ -153,7 +162,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
         include: true,
         target: s.type === 'existing'
           ? { type: 'existing', id: s.item.id, reason: s.reason }
-          : { type: 'new', name: s.name, category: 'Mercearia', unit: size ? size.unit : mapUnit(item.unit) },
+          : { type: 'new', name: s.name, category: suggestCategory(item.name) || 'Outros', unit: size ? size.unit : mapUnit(item.unit) },
         alternatives: s.alternatives || [],
       }
     }))
@@ -187,7 +196,11 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
       const otherItems = rows.filter(r => !r.include).map(r => ({
         name: r.nf.name, qty: r.nf.qty, unit: r.nf.unit.toLowerCase(), totalPrice: r.nf.total,
       }))
-      const date = nota.issuedAt ? nota.issuedAt.slice(0, 10) : new Date().toISOString().slice(0, 10)
+      // Mesma data da nota: horário exato da emissão; data trocada/confirmada à mão: meio-dia daquele dia
+      const date = purchaseDate || localDateStr(new Date())
+      const createdAt = nota.issuedAt && nota.issuedAt.slice(0, 10) === date
+        ? Timestamp.fromDate(new Date(nota.issuedAt))
+        : Timestamp.fromDate(new Date(`${date}T12:00:00`))
       const mercadoName = mercado.trim() || 'Não informado'
       const historyRef = key ? doc(db, 'families', familyId, 'history', key) : doc(collection(db, 'families', familyId, 'history'))
       const ops = []
@@ -197,7 +210,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
       }
       ops.push(
         b => b.set(historyRef, {
-          createdAt: nota.issuedAt ? Timestamp.fromDate(new Date(nota.issuedAt)) : serverTimestamp(),
+          createdAt,
           mercado: mercadoName,
           listName: original?.listName || listName || 'Nota fiscal',
           finishedBy: original?.finishedBy || user.uid,
@@ -215,11 +228,22 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
       if (mercado.trim()) {
         ops.push(b => b.set(doc(db, 'families', familyId, 'mercados', mercadoName.toLowerCase()), { name: mercadoName }))
       }
+      // Conciliação: os preços da compra manual saem do catálogo (a nota traz os preços certos).
+      // Sem isso, um preço digitado errado na compra manual ficava no histórico para sempre.
+      const histories = {}
+      if (original) {
+        for (const c of pricesOfPurchase(original, catalog)) {
+          histories[c.key] = c.history
+          ops.push(b => b.update(doc(db, 'families', familyId, 'catalog', c.key), {
+            priceHistory: arrayRemove(...c.removed), lastPrice: c.lastPrice ?? deleteField(),
+          }))
+        }
+      }
       for (const { r, x } of chosen) {
         ops.push(b => b.set(doc(db, 'families', familyId, 'catalog', x.key), {
           name: x.name, category: x.category, unit: x.unit,
           lastPrice: x.unitPrice,
-          priceHistory: priceHistoryWrite(catalog[x.key]?.priceHistory, { price: x.unitPrice, date, mercado: mercadoName }),
+          priceHistory: priceHistoryWrite(histories[x.key] ?? catalog[x.key]?.priceHistory, { price: x.unitPrice, date, mercado: mercadoName }),
         }, { merge: true }))
         if (r.nf.code) {
           ops.push(b => b.set(doc(db, 'families', familyId, 'nfceMap', r.nf.code), { catalogId: x.key, nfName: r.nf.name }))
@@ -233,7 +257,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
       const leftChecked = original ? 0 : entries.filter(e => e.checked && !bought.has(String(e.name).toLowerCase())).length
       onSaved?.({ removed: removed.length, leftChecked, reconciled: !!original })
     } catch (e) {
-      alert('Erro ao registrar: ' + e.message)
+      showError(e, 'registrar a nota')
       setStep('review')
     }
   }
@@ -252,7 +276,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
         {error && !retry && <p className="text-red-300 text-sm bg-red-500/10 rounded-xl px-3 py-2 mb-3">{error}</p>}
         {error && retry && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-3 mb-3">
-            <p className="text-amber-200 text-sm font-medium mb-1">{retry.reason === 'blocked' ? '⏳ SEFAZ pausou as consultas' : retry.contingency ? '⏳ Nota em contingência' : '⏳ Nota ainda não disponível'}</p>
+            <p className="text-amber-200 text-sm font-medium mb-1">{retry.reason === 'blocked' ? 'SEFAZ pausou as consultas' : retry.contingency ? 'Nota em contingência' : 'Nota ainda não disponível'}</p>
             <p className="text-amber-100/80 text-sm">{error}</p>
             <div className="flex gap-2 mt-3">
               <button onClick={() => { addPendingNote(familyId, { url: retry.url, key: retry.key, contingency: retry.contingency }); setRetry(null); setError('') }}
@@ -275,8 +299,8 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
                       <span className="text-gray-500 text-xs"> · guardada {new Date(n.savedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}{n.contingency ? ' · contingência' : ''}</span>
                     </span>
                     <button onClick={() => start(n.url)} className="text-sm font-medium text-green-300 border border-green-500/40 bg-green-500/10 px-3 py-1 rounded-full">Ler</button>
-                    <button onClick={() => confirm('Remover esta nota da lista?') && removePendingNote(familyId, n.key || n.url)}
-                      className="text-gray-500 text-sm px-1" aria-label="Remover nota guardada">✕</button>
+                    <button onClick={async () => { if (await ask({ title: 'Remover nota guardada?', message: 'Ela sai da fila de leitura. A compra não é afetada.', confirm: 'Remover', danger: true })) removePendingNote(familyId, n.key || n.url) }}
+                      className="text-gray-500 text-sm min-w-11 min-h-11" aria-label="Remover nota guardada">✕</button>
                   </div>
                 ))}
               </div>
@@ -333,7 +357,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
 
         {step === 'duplicate' && duplicate && (
           <div className="flex flex-col items-center text-center pt-12 gap-3">
-            <div className="text-5xl">🧾</div>
+            <IconBadge><IconReceipt size={24} /></IconBadge>
             <h3 className="text-white text-lg font-semibold">Esta nota já está registrada</h3>
             <p className="text-gray-400 text-sm">
               {duplicate.mercado} · {duplicate.createdAt?.toDate?.().toLocaleDateString('pt-BR')} · {fmt(duplicate.total)}
@@ -372,10 +396,15 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
               <p className="text-gray-500 text-xs mb-1">Mercado</p>
               <input value={mercado} onChange={e => setMercado(e.target.value)}
                 className="w-full bg-gray-900 text-white text-base px-3 py-2 rounded-lg outline-none border border-gray-700 mb-2" />
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>{nota.issuedAt ? new Date(nota.issuedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''}</span>
+              <div className="flex items-center justify-between gap-2 text-xs text-gray-400">
+                <label className="flex items-center gap-2">
+                  <span className="text-gray-500">Data da compra</span>
+                  <input type="date" value={purchaseDate} max={localDateStr(new Date())} onChange={e => setPurchaseDate(e.target.value)}
+                    className={`bg-gray-900 text-white text-sm px-2 py-1 rounded-lg outline-none border [color-scheme:dark] ${nota.issuedAt ? 'border-gray-700' : 'border-amber-500/60'}`} />
+                </label>
                 <span>{rows.length} itens · <b className="text-white">{fmt(nota.total)}</b></span>
               </div>
+              {!nota.issuedAt && <p className="text-amber-300 text-xs mt-2">A data não apareceu na nota. Confira a data da compra antes de registrar.</p>}
             </div>
 
             <p className="text-gray-500 text-xs mb-2">Confira onde cada item entra. Mesclar mantém um produto só (ex.: todas as marcas de arroz em "Arroz"). Desmarque o que não quer acompanhar o preço: continua contando no total da compra.</p>
@@ -401,7 +430,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
                         const v = e.target.value
                         if (v === '__new__') {
                           const size = packSize(r.nf.name)
-                          updateRow(i, { target: { type: 'new', name: r.target.name || r.nf.name.split(' ')[0], category: 'Mercearia', unit: size ? size.unit : mapUnit(r.nf.unit) } })
+                          updateRow(i, { target: { type: 'new', name: r.target.name || r.nf.name.split(' ')[0], category: suggestCategory(r.nf.name) || 'Outros', unit: size ? size.unit : mapUnit(r.nf.unit) } })
                         } else updateRow(i, { target: { type: 'existing', id: v } })
                       }}
                       className="w-full bg-gray-800 text-white text-base px-3 py-2 rounded-lg outline-none border border-gray-700">

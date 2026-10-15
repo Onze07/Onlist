@@ -20,12 +20,6 @@ service cloud.firestore {
       return request.auth.uid == data.createdBy || request.auth.uid in data.get('admins', []);
     }
 
-    // Vagas do plano. `plan` só é gravado pelo servidor (Admin SDK).
-    // Sem plano = sem cobrança ainda: 20 vagas, só contra abuso de código vazado.
-    function seatsOf(data) {
-      return data.get('plan', {}).get('seats', 20);
-    }
-
     function unchanged(keys) {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(keys);
     }
@@ -35,9 +29,10 @@ service cloud.firestore {
       allow read, write: if signedIn() && request.auth.uid == uid;
     }
 
-    // Código de convite -> familyId. Leitura só por ID exato (sem listagem).
+    // Código de convite -> familyId. O app não lê códigos: entrar com código é só pelo
+    // servidor (/api/family), que limita tentativas erradas. Isso impede testar códigos em massa.
     match /familyCodes/{code} {
-      allow get: if signedIn();
+      allow read: if false;
       allow create: if signedIn()
         && getAfter(familyPath(request.resource.data.familyId)).data.code == code
         && request.auth.uid in getAfter(familyPath(request.resource.data.familyId)).data.members;
@@ -50,14 +45,14 @@ service cloud.firestore {
       allow update: if false;
     }
 
-    // Feedback: qualquer usuário envia; leitura só pelo console do Firebase
+    // Troca de família em andamento: só o servidor (/api/family) lê e grava
+    match /moves/{uid} {
+      allow read, write: if false;
+    }
+
+    // Feedback: só pelo servidor (/api/feedback), que valida, limita e avisa por e-mail
     match /feedback/{id} {
-      allow create: if signedIn()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.message is string
-        && request.resource.data.message.size() > 0
-        && request.resource.data.message.size() <= 2000;
-      allow read, update, delete: if false;
+      allow read, write: if false;
     }
 
     match /families/{fid} {
@@ -101,13 +96,7 @@ service cloud.firestore {
         && request.resource.data.members.toSet() == resource.data.members.toSet().difference([request.auth.uid].toSet())
         && request.resource.data.get('admins', []).toSet() == resource.data.get('admins', []).toSet().difference([request.auth.uid].toSet());
 
-      // Entrar: só adiciona a si mesmo, prova que conhece o código
-      // (users/{uid}.joinCode no mesmo batch) e respeita o limite de vagas
-      allow update: if signedIn()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
-        && request.resource.data.members.toSet() == resource.data.members.toSet().union([request.auth.uid].toSet())
-        && resource.data.members.size() < seatsOf(resource.data)
-        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.joinCode == resource.data.code;
+      // Entrar em uma família: só pelo servidor (/api/family), com limite de tentativas e de vagas
 
       // Excluir a família: só o dono, e só quando ele é o único membro (exclusão de conta)
       allow delete: if signedIn()

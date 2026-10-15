@@ -6,6 +6,7 @@ import { getAuth } from 'firebase-admin/auth'
 import { logError } from './_lib/errlog.js'
 import { getFirestore } from 'firebase-admin/firestore'
 import { SupportError, createFeedback, sendEmail, supportEmail } from './_lib/support-core.js'
+import { RateLimitError, hit } from './_lib/ratelimit.js'
 
 function app() {
   if (getApps().length) return getApps()[0]
@@ -27,13 +28,15 @@ export default async function handler(req, res) {
     }
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {}
+    await hit(getFirestore(), `feedback_${token.uid}`, { limit: 5, windowSec: 3600, message: 'Você já enviou várias mensagens agora há pouco.' })
     const fb = await createFeedback({ fs: getFirestore(), uid: token.uid, email: token.email, body })
 
     // O e-mail é um extra: se falhar, a mensagem já está salva e aparece no painel
     const to = String(process.env.SUPPORT_EMAIL_TO || process.env.ADMIN_EMAILS || '')
       .split(',').map(s => s.trim()).filter(Boolean)
-    const host = req.headers['x-forwarded-host'] || req.headers.host
-    const mail = supportEmail(fb, `https://${host}/admin`)
+    // Endereço fixo quando configurado (APP_URL); o cabeçalho Host vem de quem chama
+    const base = (process.env.APP_URL || `https://${req.headers['x-forwarded-host'] || req.headers.host}`).replace(/\/$/, '')
+    const mail = supportEmail(fb, `${base}/admin`)
     const email = await sendEmail({
       apiKey: process.env.RESEND_API_KEY,
       from: process.env.RESEND_FROM || 'Onlist <onboarding@resend.dev>',
@@ -46,6 +49,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ id: fb.id })
   } catch (e) {
     if (e instanceof SupportError) return res.status(e.status).json({ error: e.message })
+    if (e instanceof RateLimitError) return res.status(429).json({ error: e.message, retryAfter: e.retryAfter })
     console.error('feedback', e)
     await logError(getApps().length ? getFirestore() : null, { source: 'server', kind: 'exception', message: `/api/feedback: ${e.message}`, detail: e.stack, path: '/api/feedback' })
     return res.status(500).json({ error: 'Não foi possível enviar. Tente de novo.' })

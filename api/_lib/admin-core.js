@@ -13,7 +13,7 @@ export class AdminError extends Error {
 export function isAdminEmail(token, envValue = process.env.ADMIN_EMAILS) {
   const list = String(envValue || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
   const email = String(token?.email || '').toLowerCase()
-  return !!email && token?.email_verified !== false && list.includes(email)
+  return !!email && token?.email_verified === true && list.includes(email)
 }
 
 const DAY = 86400000
@@ -125,7 +125,6 @@ export async function overview({ fs, auth, now = Date.now() }) {
       usersNoFamily: users.filter(u => !inFamily.has(u.uid)).length,
       families: families.length,
       familiesWithPurchase: families.filter(f => f.purchases > 0).length,
-      familiesBuying30: families.filter(f => f.purchases30 > 0).length,
       familiesBuying30: families.filter(f => f.purchases30 > 0).length,
       active7: active(7),
       active30: active(30),
@@ -249,4 +248,36 @@ export async function setFeedbackStatus({ fs, id, status, note, reply, adminEmai
     notified = await onResolved({ feedback: { id, ...before }, reply: replyText })
   }
   return { ok: true, notified }
+}
+
+// --- Segurança do painel ---
+
+// Login no painel vale 12 horas (auth_time = quando a pessoa entrou com o Google, em segundos)
+export const ADMIN_SESSION_SEC = 12 * 3600
+export function isRecentLogin(token, nowMs = Date.now()) {
+  const authTime = Number(token?.auth_time) || 0
+  return authTime > 0 && nowMs / 1000 - authTime <= ADMIN_SESSION_SEC
+}
+
+// Registro de ações do admin (quem fez o quê e quando). Só o servidor grava e lê.
+export async function audit(fs, { email, action, target, details }) {
+  try {
+    await fs.collection('adminAudit').add({
+      email: email || null,
+      action,
+      target: target || null,
+      details: details ? JSON.parse(JSON.stringify(details)) : null,
+      at: FieldValue.serverTimestamp(),
+    })
+  } catch (e) {
+    console.error('audit', e)
+  }
+}
+
+export async function listAudit({ fs, limit = 100 }) {
+  const snap = await fs.collection('adminAudit').orderBy('at', 'desc').limit(limit).get()
+  return snap.docs.map(d => {
+    const a = d.data()
+    return { id: d.id, at: iso(a.at), email: a.email, action: a.action, target: a.target, details: a.details }
+  })
 }

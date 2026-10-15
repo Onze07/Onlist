@@ -2,8 +2,9 @@ import { auth } from '../firebase'
 import { reportError } from './errorReporter'
 
 // POST nas funções da Vercel (/api/*) com o login do usuário
-export async function apiPost(path, payload) {
-  const idToken = await auth.currentUser?.getIdToken()
+// freshToken: força um token novo (ex.: logo depois de entrar de novo com o Google)
+export async function apiPost(path, payload, { freshToken = false } = {}) {
+  const idToken = await auth.currentUser?.getIdToken(freshToken)
   if (!idToken) throw new Error('Faça login novamente')
   let res
   try {

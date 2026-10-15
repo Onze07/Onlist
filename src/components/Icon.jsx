@@ -176,3 +176,45 @@ export function IconCalc({ size = 16 }) {
     </Svg>
   )
 }
+
+export function IconCamera({ size = 16 }) {
+  return <Svg size={size}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></Svg>
+}
+
+export function IconCart({ size = 16 }) {
+  return <Svg size={size}><circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" /><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6" /></Svg>
+}
+
+export function IconClock({ size = 16 }) {
+  return <Svg size={size}><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></Svg>
+}
+
+export function IconFile({ size = 16 }) {
+  return <Svg size={size}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M8 13h8M8 17h5" /></Svg>
+}
+
+export function IconUsers({ size = 16 }) {
+  return <Svg size={size}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></Svg>
+}
+
+export function IconKey({ size = 16 }) {
+  return <Svg size={size}><circle cx="7.5" cy="15.5" r="5.5" /><path d="M21 2l-9.6 9.6M15.5 7.5l3 3L22 7l-3-3" /></Svg>
+}
+
+export function IconMail({ size = 16 }) {
+  return <Svg size={size}><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /><path d="m22 6-10 7L2 6" /></Svg>
+}
+
+export function IconSend({ size = 16 }) {
+  return <Svg size={size}><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" /></Svg>
+}
+
+export function IconList({ size = 16 }) {
+  return <Svg size={size}><path d="M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01" /></Svg>
+}
+
+// Ícone grande dentro de um círculo discreto, para telas de boas-vindas, vazio e sucesso
+export function IconBadge({ children, tone = 'gray' }) {
+  const tones = { gray: 'bg-gray-800 text-gray-400', green: 'bg-green-500/10 text-green-400', amber: 'bg-amber-500/10 text-amber-300' }
+  return <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto ${tones[tone]}`} aria-hidden="true">{children}</div>
+}
