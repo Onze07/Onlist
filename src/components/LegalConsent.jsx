@@ -5,6 +5,7 @@ import { auth } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
 import { LEGAL_VERSION } from '../lib/legal'
 import { showError } from '../lib/feedback'
+import { IconBadge, IconFile } from './Icon'
 
 // Aceite obrigatório dos Termos e da Política (primeiro acesso ou nova versão)
 export default function LegalConsent({ updated }) {
@@ -25,7 +26,7 @@ export default function LegalConsent({ updated }) {
   return (
     <div className="flex flex-col justify-center min-h-svh bg-gray-900 px-6">
       <div className="max-w-sm mx-auto w-full">
-        <div className="text-4xl mb-4">📄</div>
+        <div className="mb-4 [&>div]:mx-0"><IconBadge><IconFile size={24} /></IconBadge></div>
         <h1 className="text-white text-xl font-bold mb-2">{updated ? 'Atualizamos nossos termos' : 'Antes de começar'}</h1>
         <p className="text-gray-400 text-sm mb-6 leading-relaxed">
           Leia como o Onlist funciona e como cuidamos dos seus dados, conforme a LGPD.

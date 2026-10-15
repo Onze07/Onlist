@@ -10,6 +10,7 @@ import { addPendingNote, isContingencyKey, keyFromUrl, listPendingNotes, removeP
 import { parseAccessKey } from '../../api/_lib/nfce-parse.js'
 import { ask, showError } from '../lib/feedback'
 import { pricesOfPurchase } from '../lib/prices'
+import { IconBadge, IconReceipt } from './Icon'
 
 // Link do QR (http...) ou chave de acesso digitada/colada (44 números, com ou sem espaços)
 const isLink = s => /^\s*https?:\/\//i.test(String(s || ''))
@@ -275,7 +276,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
         {error && !retry && <p className="text-red-300 text-sm bg-red-500/10 rounded-xl px-3 py-2 mb-3">{error}</p>}
         {error && retry && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-3 mb-3">
-            <p className="text-amber-200 text-sm font-medium mb-1">{retry.reason === 'blocked' ? '⏳ SEFAZ pausou as consultas' : retry.contingency ? '⏳ Nota em contingência' : '⏳ Nota ainda não disponível'}</p>
+            <p className="text-amber-200 text-sm font-medium mb-1">{retry.reason === 'blocked' ? 'SEFAZ pausou as consultas' : retry.contingency ? 'Nota em contingência' : 'Nota ainda não disponível'}</p>
             <p className="text-amber-100/80 text-sm">{error}</p>
             <div className="flex gap-2 mt-3">
               <button onClick={() => { addPendingNote(familyId, { url: retry.url, key: retry.key, contingency: retry.contingency }); setRetry(null); setError('') }}
@@ -356,7 +357,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
 
         {step === 'duplicate' && duplicate && (
           <div className="flex flex-col items-center text-center pt-12 gap-3">
-            <div className="text-5xl">🧾</div>
+            <IconBadge><IconReceipt size={24} /></IconBadge>
             <h3 className="text-white text-lg font-semibold">Esta nota já está registrada</h3>
             <p className="text-gray-400 text-sm">
               {duplicate.mercado} · {duplicate.createdAt?.toDate?.().toLocaleDateString('pt-BR')} · {fmt(duplicate.total)}

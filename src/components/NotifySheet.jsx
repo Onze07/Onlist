@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useFamily } from '../context/FamilyContext'
 import { sendNotify } from '../lib/push'
 import { showError } from '../lib/feedback'
+import { IconBadge, IconSend, IconBell } from './Icon'
 
 // "Avisar fulano": escolhe quem recebe o aviso de que tem compra para fazer
 export default function NotifySheet({ listName, pendingCount, onClose }) {
@@ -49,7 +50,7 @@ export default function NotifySheet({ listName, pendingCount, onClose }) {
     return (
       <Sheet onClose={onClose}>
         <div className="text-center py-2">
-          <div className="text-4xl mb-3">{result?.sent > 0 ? '📨' : '🔕'}</div>
+          <div className="mb-3"><IconBadge tone={result?.sent > 0 ? 'green' : 'amber'}>{result?.sent > 0 ? <IconSend size={22} /> : <IconBell size={22} />}</IconBadge></div>
           <h2 className="text-white text-lg font-semibold mb-1">{result?.sent > 0 ? 'Aviso enviado' : 'Ninguém recebeu'}</h2>
           {without.length > 0 && (
             <p className="text-amber-300/90 text-sm mb-1">{names(without)} ainda não ativou as notificações (aba Conta).</p>

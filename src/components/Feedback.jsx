@@ -13,7 +13,7 @@ export default function Feedback() {
   return (
     <>
       <div className="fixed inset-x-0 z-[70] px-4 flex flex-col gap-2 max-w-lg mx-auto pointer-events-none"
-        style={{ bottom: 'calc(84px + env(safe-area-inset-bottom))' }} aria-live="polite">
+        style={{ bottom: 'calc(148px + env(safe-area-inset-bottom))' }} aria-live="polite">
         {toasts.map(t => (
           <div key={t.id} role={t.tone === 'error' ? 'alert' : 'status'}
             className={`toast-in pointer-events-auto flex items-center gap-3 bg-gray-800 border ${TONES[t.tone]} text-gray-100 text-sm rounded-xl pl-4 pr-2 py-2 shadow-xl`}>
@@ -53,7 +53,7 @@ function ConfirmDialog({ title, message, confirm, cancel, danger, close }) {
         {message && <p className="text-gray-400 text-sm mb-5">{message}</p>}
         <div className={`flex gap-3 ${message ? '' : 'mt-5'}`}>
           <button ref={cancelRef} onClick={() => close(false)}
-            className="flex-1 min-h-12 bg-gray-800 text-gray-200 font-medium rounded-xl text-sm">{cancel}</button>
+            className="flex-1 min-h-12 outline-none focus-visible:ring-2 focus-visible:ring-green-500 bg-gray-800 text-gray-200 font-medium rounded-xl text-sm">{cancel}</button>
           <button onClick={() => close(true)}
             className={`flex-1 min-h-12 font-semibold rounded-xl text-sm text-white ${danger ? 'bg-red-600 active:bg-red-700' : 'bg-green-600 active:bg-green-700'}`}>
             {confirm}

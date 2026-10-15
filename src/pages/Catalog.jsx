@@ -5,7 +5,7 @@ import { useFamily } from '../context/FamilyContext'
 import { fmtDate, normalizePriceHistory, queueWrite } from '../lib/firestore'
 import { latestByMarket } from '../lib/prices'
 import MoneyInput from '../components/MoneyInput'
-import { IconEdit, IconTrash, IconChevronDown, IconChevronRight, IconTrendingUp } from '../components/Icon'
+import { IconEdit, IconTrash, IconChevronDown, IconChevronRight, IconTrendingUp, IconBadge, IconList } from '../components/Icon'
 import { UNITS, UNIT_LABELS } from '../lib/nfceMatch'
 import { CATEGORIES, orderCategories } from '../lib/categories'
 import { ask, toast } from '../lib/feedback'
@@ -88,15 +88,27 @@ export default function Catalog({ onAddToList }) {
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Buscar item..."
+          aria-label="Buscar no catálogo"
+          type="search"
           className="w-full bg-gray-800 text-white px-4 py-2.5 rounded-xl outline-none text-sm border border-gray-700 focus:border-gray-600"
         />
       </div>
 
       <div className="flex-1 overflow-y-auto pb-20">
         {filtered.length === 0 && (
-          <div className="text-center text-gray-600 mt-20">
-            <p className="text-sm">{search ? 'Nenhum item encontrado' : 'Catálogo vazio'}</p>
-            <p className="text-xs mt-1 text-gray-700">Itens aparecem aqui ao serem adicionados à lista</p>
+          <div className="text-center mt-20 px-8">
+            {search ? (
+              <>
+                <p className="text-white text-sm font-medium">Nada encontrado para "{search}"</p>
+                <button onClick={() => setSearch('')} className="text-green-400 text-sm font-medium min-h-11 px-3 mt-2">Limpar busca</button>
+              </>
+            ) : (
+              <>
+                <IconBadge><IconList size={24} /></IconBadge>
+                <p className="text-white text-sm font-medium mt-4">Catálogo vazio</p>
+                <p className="text-gray-500 text-xs mt-1">Cada item que você coloca na lista fica salvo aqui, com o histórico de preços.</p>
+              </>
+            )}
           </div>
         )}
 
@@ -135,20 +147,20 @@ export default function Catalog({ onAddToList }) {
 
                     {/* Price history indicator */}
                     {item.priceHistory?.length > 0 && (
-                      <button onClick={() => setPriceHistoryId(priceHistoryId === item.id ? null : item.id)}
-                        className="text-gray-400 hover:text-gray-200 px-1.5">
+                      <button onClick={() => setPriceHistoryId(priceHistoryId === item.id ? null : item.id)} aria-label={`Histórico de preços de ${item.name}`} aria-expanded={priceHistoryId === item.id}
+                        className="text-gray-400 hover:text-gray-200 min-w-9 min-h-11 flex items-center justify-center">
                         <IconTrendingUp size={16} />
                       </button>
                     )}
 
                     <button onClick={() => onAddToList(item)}
-                      className="text-gray-300 text-xs px-2.5 py-1.5 rounded border border-gray-600 hover:border-gray-400 flex-shrink-0">
+                      aria-label={`Adicionar ${item.name} à lista`} className="text-gray-300 text-xs px-2.5 min-h-9 rounded-lg border border-gray-600 hover:border-gray-400 flex-shrink-0">
                       + lista
                     </button>
-                    <button onClick={() => setEditingId(item.id)} className="text-gray-400 hover:text-gray-200 px-1.5">
+                    <button onClick={() => setEditingId(item.id)} aria-label={`Editar ${item.name}`} className="text-gray-400 hover:text-gray-200 min-w-9 min-h-11 flex items-center justify-center">
                       <IconEdit size={16} />
                     </button>
-                    <button onClick={() => handleDelete(item)} className="text-gray-500 hover:text-red-400 px-1.5">
+                    <button onClick={() => handleDelete(item)} aria-label={`Remover ${item.name} do catálogo`} className="text-gray-500 hover:text-red-400 min-w-9 min-h-11 -mr-2 flex items-center justify-center">
                       <IconTrash size={16} />
                     </button>
                   </div>

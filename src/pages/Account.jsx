@@ -108,7 +108,7 @@ export default function Account() {
           <p className="text-gray-500 text-xs truncate">{user.email}</p>
         </div>
         <button onClick={async () => { if (await ask({ title: 'Sair da conta neste aparelho?', message: 'Seus dados continuam salvos. É só entrar de novo com o Google.', confirm: 'Sair' })) signOut(auth) }}
-          className="text-gray-400 text-xs border border-gray-700 px-3 py-1.5 rounded-lg">
+          className="text-gray-400 text-xs border border-gray-700 px-4 min-h-10 rounded-lg">
           Sair
         </button>
       </div>
@@ -122,14 +122,14 @@ export default function Account() {
                 onKeyDown={e => e.key === 'Enter' && run(async () => { await renameFamily(name); setEditingName(false) })}
                 className="flex-1 bg-gray-800 text-white px-3 py-2 rounded-lg outline-none text-sm border border-gray-700" />
               <button onClick={() => run(async () => { await renameFamily(name); setEditingName(false) })}
-                className="text-green-400 text-sm font-semibold px-2">OK</button>
-              <button onClick={() => setEditingName(false)} className="text-gray-500 px-1"><IconX /></button>
+                className="text-green-400 text-sm font-semibold px-3 min-h-11">Salvar</button>
+              <button onClick={() => setEditingName(false)} aria-label="Cancelar" className="text-gray-500 min-w-11 min-h-11 flex items-center justify-center"><IconX /></button>
             </div>
           ) : (
             <div className="flex items-center justify-between">
               <span className="text-white font-medium">{family.name || 'Minha família'}</span>
               {isAdmin && (
-                <button onClick={() => { setName(family.name || ''); setEditingName(true) }} className="text-gray-400">
+                <button onClick={() => { setName(family.name || ''); setEditingName(true) }} aria-label="Renomear família" className="text-gray-400 min-w-11 min-h-11 -mr-3 -my-3 flex items-center justify-center">
                   <IconEdit size={16} />
                 </button>
               )}
@@ -186,7 +186,7 @@ export default function Account() {
           {isAdmin && (
             <button disabled={busy}
               onClick={async () => { if (await ask({ title: 'Gerar um novo código?', message: 'O código e o link atuais deixam de funcionar. Quem já está na família continua.', confirm: 'Gerar novo código' })) run(regenerateCode) }}
-              className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border border-gray-700 bg-gray-800 text-gray-300 active:bg-gray-700">
+              className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium px-4 min-h-10 rounded-full border border-gray-700 bg-gray-800 text-gray-300 active:bg-gray-700">
               Gerar novo código
             </button>
           )}
@@ -271,7 +271,7 @@ export default function Account() {
             </div>
             {push === 'off' && (
               <button disabled={busy} onClick={() => run(async () => { await enablePush(user, family.id); setPush(pushStatus()) })}
-                className="bg-green-500 text-white text-sm font-semibold px-3 py-1.5 rounded-lg flex-shrink-0">Ativar</button>
+                className="bg-green-500 text-white text-sm font-semibold px-4 min-h-10 rounded-lg flex-shrink-0">Ativar</button>
             )}
             {push === 'enabled' && (
               <button disabled={busy} onClick={() => run(async () => { await disablePush(user, family.id); setPush(pushStatus()) })}
@@ -307,7 +307,7 @@ export default function Account() {
           <div className="flex bg-gray-900 rounded-lg p-0.5 border border-gray-700">
             {[2, 3].map(n => (
               <button key={n} onClick={() => updateUserDoc({ priceDecimals: n }).catch(e => showError(e, 'salvar a preferência'))}
-                className={`px-3 py-1 text-sm rounded-md ${decimals === n ? 'bg-green-500 text-white' : 'text-gray-400'}`}>
+                aria-label={`${n} casas decimais`} aria-pressed={decimals === n} className={`min-w-10 min-h-9 text-sm rounded-md ${decimals === n ? 'bg-green-500 text-white' : 'text-gray-400'}`}>
                 {n}
               </button>
             ))}
@@ -339,7 +339,7 @@ export default function Account() {
               : 'Você sai da família e seus dados pessoais são apagados.'
             if (await ask({ title: 'Excluir sua conta?', message: `${message} Isso não pode ser desfeito.`, confirm: 'Excluir conta', danger: true })) run(deleteAccount)
           }}
-          className="text-red-400/80 text-xs underline underline-offset-2">
+          className="text-red-400/80 text-xs underline underline-offset-2 min-h-11 px-3">
           Excluir minha conta
         </button>
       </div>

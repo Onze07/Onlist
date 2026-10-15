@@ -1,20 +1,21 @@
 import { useState } from 'react'
 import { serverTimestamp } from 'firebase/firestore'
 import { useFamily } from '../context/FamilyContext'
+import { IconBadge, IconList, IconCart, IconUsers } from './Icon'
 
 const SLIDES = [
   {
-    icon: '📝',
+    icon: <IconList size={28} />,
     title: 'Monte a lista',
     text: 'Toque em "Adicionar item". Escolha a categoria, a quantidade e, se souber, o preço. Itens já comprados aparecem como sugestão.',
   },
   {
-    icon: '🛒',
+    icon: <IconCart size={28} />,
     title: 'No mercado',
     text: 'Marque o que já pegou. No fim, toque em "Finalizar", informe o mercado e pronto: a compra vai para os Registros com os preços pagos.',
   },
   {
-    icon: '👨‍👩‍👧',
+    icon: <IconUsers size={28} />,
     title: 'Em família',
     text: 'Na aba Conta, compartilhe o código de convite. Todos veem a mesma lista em tempo real. Acompanhe os gastos em Relatórios.',
   },
@@ -35,10 +36,10 @@ export default function Welcome() {
     <div className="fixed inset-0 z-50 bg-gray-900 flex flex-col px-6"
       style={{ paddingTop: 'max(24px, env(safe-area-inset-top))', paddingBottom: 'max(24px, env(safe-area-inset-bottom))' }}>
       <div className="flex justify-end">
-        {!last && <button onClick={finish} className="text-gray-500 text-sm py-2">Pular</button>}
+        {!last && <button onClick={finish} className="text-gray-500 text-sm min-h-11 px-2">Pular</button>}
       </div>
       <div className="flex-1 flex flex-col items-center justify-center text-center max-w-sm mx-auto">
-        <div className="text-6xl mb-6">{slide.icon}</div>
+        <div className="mb-6"><IconBadge tone="green">{slide.icon}</IconBadge></div>
         <h2 className="text-white text-2xl font-bold mb-3">{slide.title}</h2>
         <p className="text-gray-400 leading-relaxed">{slide.text}</p>
       </div>

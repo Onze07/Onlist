@@ -3,11 +3,12 @@ import { apiPost } from '../lib/api'
 import { useFamily } from '../context/FamilyContext'
 import Sheet from './Sheet'
 import { showError } from '../lib/feedback'
+import { IconBadge, IconCheck } from './Icon'
 
 const TYPES = [
-  { id: 'sugestao', label: '💡 Sugestão' },
-  { id: 'problema', label: '🐞 Problema' },
-  { id: 'elogio', label: '❤️ Elogio' },
+  { id: 'sugestao', label: 'Sugestão' },
+  { id: 'problema', label: 'Problema' },
+  { id: 'elogio', label: 'Elogio' },
 ]
 
 export default function FeedbackSheet({ onClose }) {
@@ -38,8 +39,8 @@ export default function FeedbackSheet({ onClose }) {
     return (
       <Sheet onClose={onClose}>
         <div className="text-center py-4">
-          <div className="text-4xl mb-3">🙏</div>
-          <h2 className="text-white text-lg font-semibold mb-1">Obrigado!</h2>
+          <div className="mb-3"><IconBadge tone="green"><IconCheck size={24} /></IconBadge></div>
+          <h2 className="text-white text-lg font-semibold mb-1">Mensagem enviada</h2>
           <p className="text-gray-400 text-sm mb-6">Sua mensagem chegou. Quando respondermos, você recebe um aviso aqui no app.</p>
           <button onClick={onClose} className="w-full bg-green-500 text-white font-semibold py-3 rounded-xl">Fechar</button>
         </div>
@@ -53,7 +54,7 @@ export default function FeedbackSheet({ onClose }) {
       <div className="flex gap-2 mb-3">
         {TYPES.map(t => (
           <button key={t.id} onClick={() => setType(t.id)}
-            className={`flex-1 text-sm py-2 rounded-xl border ${type === t.id ? 'border-green-500 bg-green-500/10 text-white' : 'border-gray-700 text-gray-400'}`}>
+            className={`flex-1 text-sm min-h-11 rounded-xl border ${type === t.id ? 'border-green-500 bg-green-500/10 text-white' : 'border-gray-700 text-gray-400'}`}>
             {t.label}
           </button>
         ))}
