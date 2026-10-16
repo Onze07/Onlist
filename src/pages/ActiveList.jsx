@@ -427,7 +427,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   return (
     <div className="flex flex-col min-h-svh bg-gray-900">
       {/* Header */}
-      <div className="px-4 pt-12 pb-3 border-b border-gray-800">
+      <div className="px-4 pb-3 border-b border-gray-800 header-safe">
         <button onClick={() => setShowManager(true)} aria-label="Trocar de lista"
           className="inline-flex items-center gap-2 mb-1.5 -ml-1 pl-3 pr-2.5 py-1 rounded-full bg-gray-800/70 border border-gray-700 active:bg-gray-700">
           <h1 className="text-white text-lg font-semibold">{listName || '...'}</h1>

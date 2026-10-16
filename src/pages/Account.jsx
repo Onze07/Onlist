@@ -96,7 +96,7 @@ export default function Account() {
 
   return (
     <div className="flex flex-col min-h-svh bg-gray-900 pb-28">
-      <div className="px-4 pt-12 pb-3 border-b border-gray-800">
+      <div className="px-4 pb-3 border-b border-gray-800 header-safe">
         <h1 className="text-white text-xl font-semibold">Conta</h1>
       </div>
 

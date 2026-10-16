@@ -39,3 +39,20 @@ input, select, textarea, button {
     scroll-behavior: auto !important;
   }
 }
+
+/* Cabeçalho das abas: abaixo da barra de status/ilha dinâmica do iPhone (app em tela cheia) */
+.header-safe {
+  padding-top: max(3rem, calc(env(safe-area-inset-top) + 0.75rem));
+}
+
+/* Faixa da barra de status: o que rola por baixo não aparece borrado atrás do relógio */
+.status-bar-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: env(safe-area-inset-top);
+  background: #111827;
+  z-index: 45;
+  pointer-events: none;
+}

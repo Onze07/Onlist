@@ -76,6 +76,7 @@ export default function App() {
 
   return (
     <div className="relative">
+      <div className="status-bar-bg" aria-hidden="true" />
       <div style={{ display: tab === 'list' ? 'block' : 'none' }}>
         <ActiveList
           pendingAddFromCatalog={pendingCatalogItem}

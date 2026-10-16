@@ -82,7 +82,7 @@ export default function Catalog({ onAddToList }) {
 
   return (
     <div className="flex flex-col min-h-svh bg-gray-900">
-      <div className="px-4 pt-12 pb-3 border-b border-gray-800">
+      <div className="px-4 pb-3 border-b border-gray-800 header-safe">
         <h1 className="text-white text-xl font-semibold mb-3">Catálogo</h1>
         <input
           value={search}
