@@ -6,6 +6,8 @@ import { IconTrash, IconChevronRight, IconDownload, IconBadge, IconReceipt, Icon
 import { historyCsv, downloadFile } from '../lib/csv'
 import { commitInChunks, localDate, queueWrite } from '../lib/firestore'
 import SwipeRow from '../components/SwipeRow'
+import TipBanner from '../components/TipBanner'
+import { useTips } from '../lib/tips'
 import { useAuth } from '../context/AuthContext'
 import NfceReader from '../components/NfceReader'
 import { listPendingNotes } from '../lib/pendingNotes'
@@ -80,6 +82,7 @@ export default function History() {
   const [records, setRecords] = useState([])
   const [expanded, setExpanded] = useState(null)
   const [monthOpen, setMonthOpen] = useState({})
+  const tips = useTips()
   const [yearOpen, setYearOpen] = useState({})
   const [pageSize, setPageSize] = useState(PAGE)
   const [loadedSize, setLoadedSize] = useState(0)
@@ -125,7 +128,9 @@ export default function History() {
   }, [hasMore, loadingMore, autoLoad])
 
   // Exclui a compra e os preços que ela lançou no catálogo; "Desfazer" devolve tudo
-  async function deleteRecord(id, mercado) {
+  async function deleteRecord(id, mercado, viaButton = false) {
+    const tip = viaButton ? tips.take('tip-history-swipe', 'Dica: deslize a compra para a esquerda para excluir.') : ''
+    if (!viaButton) tips.mark('tip-history-swipe')
     const record = records.find(r => r.id === id)
     if (expanded === id) setExpanded(null)
     if (!record) {
@@ -135,7 +140,7 @@ export default function History() {
     try {
       const { committed, undo, pricesRemoved } = await deletePurchase(familyId, record)
       queueWrite(committed, 'excluir a compra')
-      toast(`Compra de ${mercado} excluída${pricesRemoved ? ` com ${pricesRemoved} ${pricesRemoved === 1 ? 'preço' : 'preços'} do catálogo` : ''}.`, {
+      toast(`Compra de ${mercado} excluída${pricesRemoved ? ` com ${pricesRemoved} ${pricesRemoved === 1 ? 'preço' : 'preços'} do catálogo` : ''}.${tip ? ` ${tip}` : ''}`, {
         action: { label: 'Desfazer', run: () => queueWrite(undo(), 'desfazer') },
       })
     } catch (e) {
@@ -229,6 +234,9 @@ export default function History() {
           </div>
         </div>
       </div>
+      {records.length > 0 && (
+        <TipBanner id="tip-history">Toque na compra para ver os itens e repetir na lista. Toque no mês ou no ano para abrir e fechar. Deslize ← para excluir.</TipBanner>
+      )}
       {pendingNotes > 0 && (
         <button onClick={() => setShowNfce(true)}
           className="mx-4 mt-3 flex items-center justify-between gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-200 text-sm rounded-xl px-3 py-2.5 text-left">
@@ -307,7 +315,7 @@ export default function History() {
                     <span className="text-gray-300 text-sm font-medium flex-shrink-0">{fmt(record.total)}</span>
                     <span className={`text-gray-500 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}><IconChevronRight size={16} /></span>
                     </button>
-                    <button onClick={() => deleteRecord(record.id, record.mercado)} aria-label={`Excluir compra de ${record.mercado}`} className="text-gray-500 hover:text-red-400 min-w-11 min-h-11 -mr-2 flex items-center justify-center">
+                    <button onClick={() => deleteRecord(record.id, record.mercado, true)} aria-label={`Excluir compra de ${record.mercado}`} className="text-gray-500 hover:text-red-400 min-w-11 min-h-11 -mr-2 flex items-center justify-center">
                       <IconTrash size={16} />
                     </button>
                   </div>

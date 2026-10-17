@@ -11,6 +11,8 @@ import { CATEGORIES } from '../lib/categories'
 import { groupForDisplay, useSortMode } from '../lib/sortMode'
 import { useListDrag } from '../lib/useListDrag'
 import SwipeRow from '../components/SwipeRow'
+import TipBanner from '../components/TipBanner'
+import { useTips } from '../lib/tips'
 import { ask, toast } from '../lib/feedback'
 import { deletePriceEntry } from '../lib/purchasePrices'
 
@@ -84,6 +86,7 @@ export default function Catalog() {
 
   // Categorias (mais itens primeiro) ou A–Z — mesma escolha da Lista
   const [sortMode, setSortMode] = useSortMode()
+  const tips = useTips()
   const displayGroups = groupForDisplay(filtered, sortMode)
 
   // Segurar e soltar em outra categoria: corrige a categoria do produto (e do item na lista, se estiver)
@@ -97,6 +100,7 @@ export default function Catalog() {
       if (entry) queueWrite(updateDoc(doc(db, 'families', familyId, 'lists', list.id, 'entries', entry.id), { category }), 'mudar categoria')
     }
     apply(cat)
+    tips.mark('tip-catalog-drag')
     toast(`"${item.name}" movido para ${cat}.`, { action: { label: 'Desfazer', run: () => apply(prev) } })
   }
   const { drag, start: startDrag, move: moveDrag, end: endDrag } = useListDrag(handleDrop)
@@ -118,11 +122,13 @@ export default function Catalog() {
   }
 
   // Remove na hora e oferece "Desfazer" (regrava o produto com o histórico de preços)
-  function handleDelete(item) {
+  function handleDelete(item, viaButton = false) {
     const { id, ...data } = item
     const ref = doc(db, 'families', familyId, 'catalog', id)
     queueWrite(deleteDoc(ref), 'remover o produto')
-    toast(`"${item.name}" removido do catálogo.`, {
+    const tip = viaButton ? tips.take('tip-catalog-swipe', 'Dica: deslize ← para excluir e → para pôr na lista.') : ''
+    if (!viaButton) tips.mark('tip-catalog-swipe')
+    toast(`"${item.name}" removido do catálogo.${tip ? ` ${tip}` : ''}`, {
       action: { label: 'Desfazer', run: () => queueWrite(setDoc(ref, data), 'desfazer') },
     })
   }
@@ -144,7 +150,7 @@ export default function Catalog() {
           className="w-full bg-gray-800 text-white px-4 py-2.5 rounded-xl outline-none text-sm border border-gray-700 focus:border-gray-600"
         />
         <div className="flex items-center justify-between mt-3 gap-3">
-          <p className="text-gray-500 text-xs">Segure um item e arraste para trocar de categoria</p>
+          <p className="text-gray-500 text-xs">Ordem</p>
           <div className="flex bg-gray-800 rounded-lg p-0.5 border border-gray-700 flex-shrink-0" role="radiogroup" aria-label="Ordem">
             {[['category', 'Categorias'], ['alpha', 'A–Z']].map(([value, label]) => (
               <button key={value} role="radio" aria-checked={sortMode === value} onClick={() => setSortMode(value)}
@@ -156,6 +162,9 @@ export default function Catalog() {
         </div>
       </div>
 
+      {items.length > 0 && (
+        <TipBanner id="tip-catalog">Deslize o produto → para pôr na lista e ← para excluir. Segure e arraste para outra categoria se estiver errada.</TipBanner>
+      )}
       <div className="flex-1 overflow-y-auto pb-20">
         {filtered.length === 0 && (
           <div className="text-center mt-20 px-8">
@@ -241,7 +250,7 @@ export default function Catalog() {
                     <button onClick={() => setEditingId(item.id)} aria-label={`Editar ${item.name}`} className="text-gray-400 hover:text-gray-200 min-w-9 min-h-11 flex items-center justify-center">
                       <IconEdit size={16} />
                     </button>
-                    <button onClick={() => handleDelete(item)} aria-label={`Remover ${item.name} do catálogo`} className="text-gray-500 hover:text-red-400 min-w-9 min-h-11 -mr-2 flex items-center justify-center">
+                    <button onClick={() => handleDelete(item, true)} aria-label={`Remover ${item.name} do catálogo`} className="text-gray-500 hover:text-red-400 min-w-9 min-h-11 -mr-2 flex items-center justify-center">
                       <IconTrash size={16} />
                     </button>
                   </div>
