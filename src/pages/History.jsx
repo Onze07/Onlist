@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { collection, onSnapshot, orderBy, query, deleteDoc, doc, getDocs, limit } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
-import { IconTrash, IconChevronDown, IconChevronRight, IconDownload, IconBadge, IconReceipt, IconCamera } from '../components/Icon'
+import { IconTrash, IconChevronRight, IconDownload, IconBadge, IconReceipt, IconCamera } from '../components/Icon'
 import { historyCsv, downloadFile } from '../lib/csv'
 import { localDate, queueWrite } from '../lib/firestore'
 import { useAuth } from '../context/AuthContext'
@@ -213,22 +213,27 @@ export default function History() {
               const isExpanded = expanded === record.id
               return (
                 <div key={record.id} className={`border-b border-gray-800/60`}>
-                  <div className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex items-center pr-2">
+                    {/* Linha inteira abre/fecha os itens da compra; só a lixeira fica de fora */}
+                    <button className="flex-1 min-w-0 flex items-center gap-3 pl-4 pr-1 py-3 text-left active:bg-gray-800/60"
+                      onClick={() => setExpanded(isExpanded ? null : record.id)}
+                      aria-expanded={isExpanded} aria-label={`${isExpanded ? 'Fechar' : 'Ver'} itens da compra de ${record.mercado}`}>
                     <div className="w-10 text-center flex-shrink-0">
                       <div className="text-white font-semibold text-base leading-none">{day}</div>
                       <div className="text-gray-600 text-xs">{weekday}</div>
                     </div>
 
-                    <button className="flex-1 text-left" onClick={() => setExpanded(isExpanded ? null : record.id)}>
+                    <div className="flex-1 min-w-0">
                       <div className="text-white text-sm font-medium flex items-center gap-1.5">
                         {record.mercado}
                         {record.source === 'nfce' && <span className="text-[10px] text-green-300 bg-green-500/10 px-1.5 py-0.5 rounded flex-shrink-0">nota</span>}
                       </div>
                       <div className="text-gray-500 text-xs">{record.listName || 'Lista'} · {itemsLabel((record.items?.length || 0) + (record.otherItems?.length || 0))}</div>
-                    </button>
+                    </div>
 
-                    <span className="text-gray-300 text-sm font-medium">{fmt(record.total)}</span>
-                    <span className="text-gray-500 ml-1">{isExpanded ? <IconChevronDown size={16} /> : <IconChevronRight size={16} />}</span>
+                    <span className="text-gray-300 text-sm font-medium flex-shrink-0">{fmt(record.total)}</span>
+                    <span className={`text-gray-500 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}><IconChevronRight size={16} /></span>
+                    </button>
                     <button onClick={() => deleteRecord(record.id, record.mercado)} aria-label={`Excluir compra de ${record.mercado}`} className="text-gray-500 hover:text-red-400 min-w-11 min-h-11 -mr-2 flex items-center justify-center">
                       <IconTrash size={16} />
                     </button>
