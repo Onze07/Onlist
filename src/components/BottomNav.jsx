@@ -46,7 +46,7 @@ export default function BottomNav({ tab, setTab }) {
           className={`flex-1 flex flex-col items-center py-2.5 gap-1 transition-colors
             ${tab === t.id ? 'text-green-400' : 'text-gray-600'}`}>
           {t.icon(tab === t.id)}
-          <span className="text-[10px]">{t.label}</span>
+          <span className="text-xs">{t.label}</span>
         </button>
       ))}
     </div>

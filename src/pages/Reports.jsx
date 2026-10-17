@@ -185,7 +185,7 @@ export default function Reports() {
 
   return (
     <div className="flex flex-col min-h-svh bg-gray-900">
-      <div className="px-4 pt-12 pb-3 border-b border-gray-800">
+      <div className="px-4 pb-3 border-b border-gray-800 header-safe">
         <div className="flex items-center justify-between">
           <h1 className="text-white text-xl font-semibold flex items-center gap-2">
             Relatórios

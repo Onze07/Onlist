@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { collection, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore'
+import { collection, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useFamily } from '../context/FamilyContext'
 import { fmtDate, normalizePriceHistory, queueWrite } from '../lib/firestore'
 import { latestByMarket } from '../lib/prices'
 import MoneyInput from '../components/MoneyInput'
-import { IconEdit, IconTrash, IconChevronDown, IconChevronRight, IconTrendingUp, IconBadge, IconList } from '../components/Icon'
+import { IconEdit, IconTrash, IconChevronDown, IconChevronRight, IconTrendingUp, IconBadge, IconList, IconCheck } from '../components/Icon'
 import { UNITS, UNIT_LABELS } from '../lib/nfceMatch'
 import { CATEGORIES, orderCategories } from '../lib/categories'
 import { ask, toast } from '../lib/feedback'
@@ -17,7 +17,12 @@ function fmt(n) {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-export default function Catalog({ onAddToList }) {
+// Lista aberta na aba Lista (gravada pela ActiveList neste aparelho)
+function currentList(familyId) {
+  try { return JSON.parse(localStorage.getItem(`lastList_${familyId}`)) || { id: 'default', name: 'Compras gerais' } } catch { return { id: 'default', name: 'Compras gerais' } }
+}
+
+export default function Catalog() {
   const { familyId, userDoc } = useFamily()
   const decimals = userDoc?.priceDecimals === 3 ? 3 : 2
   const [items, setItems] = useState([])
@@ -25,6 +30,39 @@ export default function Catalog({ onAddToList }) {
   const [editingId, setEditingId] = useState(null)
   const [collapsed, setCollapsed] = useState({})
   const [priceHistoryId, setPriceHistoryId] = useState(null)
+  const [list] = useState(() => currentList(familyId))
+  const [inList, setInList] = useState({}) // nome em minúsculas -> item da lista
+
+  // O que já está na lista, para destacar no catálogo
+  useEffect(() => {
+    if (!familyId || !list?.id) return
+    return onSnapshot(collection(db, 'families', familyId, 'lists', list.id, 'entries'), snap => {
+      const map = {}
+      snap.docs.forEach(d => { map[String(d.data().name || '').toLowerCase()] = { id: d.id, ...d.data() } })
+      setInList(map)
+    })
+  }, [familyId, list?.id])
+
+  // Adiciona direto na lista sem sair do catálogo (quantidade 1, último preço)
+  function addToList(item) {
+    const ref = doc(collection(db, 'families', familyId, 'lists', list.id, 'entries'))
+    const price = Number(item.lastPrice) || 0
+    queueWrite(setDoc(ref, {
+      name: item.name, category: item.category || 'Outros', unit: item.unit || 'un',
+      qty: 1, pricePerUnit: price, totalPrice: price, obs: '', brand: '',
+      checked: false, createdAt: serverTimestamp(),
+    }), 'adicionar à lista')
+    toast(`"${item.name}" adicionado em ${list.name || 'Lista'}.`, {
+      tone: 'ok', action: { label: 'Desfazer', run: () => queueWrite(deleteDoc(ref), 'desfazer') },
+    })
+  }
+
+  function removeFromList(entry) {
+    const { id, ...data } = entry
+    const ref = doc(db, 'families', familyId, 'lists', list.id, 'entries', id)
+    queueWrite(deleteDoc(ref), 'tirar da lista')
+    toast(`"${entry.name}" saiu da lista.`, { action: { label: 'Desfazer', run: () => queueWrite(setDoc(ref, data), 'desfazer') } })
+  }
 
   useEffect(() => {
     if (!familyId) return
@@ -82,7 +120,7 @@ export default function Catalog({ onAddToList }) {
 
   return (
     <div className="flex flex-col min-h-svh bg-gray-900">
-      <div className="px-4 pt-12 pb-3 border-b border-gray-800">
+      <div className="px-4 pb-3 border-b border-gray-800 header-safe">
         <h1 className="text-white text-xl font-semibold mb-3">Catálogo</h1>
         <input
           value={search}
@@ -131,14 +169,14 @@ export default function Catalog({ onAddToList }) {
                     onSave={data => saveEdit(item.id, data)}
                     onCancel={() => setEditingId(null)} />
                 ) : (
-                  <div className={`flex items-center gap-3 px-4 py-2.5 ${i < groups[cat].length - 1 ? 'border-b border-gray-800/60' : ''}`}>
+                  <div className={`flex items-center gap-3 px-4 py-2.5 ${inList[item.name.toLowerCase()] ? 'bg-green-500/5 shadow-[inset_3px_0_0_var(--color-green-500)]' : ''} ${i < groups[cat].length - 1 ? 'border-b border-gray-800/60' : ''}`}>
                     <div className="flex-1 min-w-0">
                       <span className="text-white text-sm">{item.name}</span>
                       <div className="text-gray-600 text-xs mt-0.5">{item.unit} · {fmt(item.lastPrice)}</div>
                       {(() => {
                         const markets = latestByMarket(item.priceHistory)
                         return markets.length > 1 && (
-                          <div className="text-emerald-400/80 text-[11px] mt-0.5 truncate">
+                          <div className="text-emerald-400/80 text-xs mt-0.5 truncate">
                             Melhor: {fmt(markets[0].price)} no {markets[0].mercado}
                           </div>
                         )
@@ -153,10 +191,18 @@ export default function Catalog({ onAddToList }) {
                       </button>
                     )}
 
-                    <button onClick={() => onAddToList(item)}
-                      aria-label={`Adicionar ${item.name} à lista`} className="text-gray-300 text-xs px-2.5 min-h-9 rounded-lg border border-gray-600 hover:border-gray-400 flex-shrink-0">
-                      + lista
-                    </button>
+                    {inList[item.name.toLowerCase()] ? (
+                      <button onClick={() => removeFromList(inList[item.name.toLowerCase()])}
+                        aria-label={`${item.name} está na lista. Tocar para tirar`}
+                        className="text-green-300 text-xs font-medium px-2.5 min-h-9 rounded-lg border border-green-500/40 bg-green-500/10 flex items-center gap-1 flex-shrink-0">
+                        <IconCheck size={12} /> Na lista
+                      </button>
+                    ) : (
+                      <button onClick={() => addToList(item)}
+                        aria-label={`Adicionar ${item.name} à lista`} className="btn-brand text-xs font-semibold px-3 min-h-9 rounded-lg flex-shrink-0">
+                        + lista
+                      </button>
+                    )}
                     <button onClick={() => setEditingId(item.id)} aria-label={`Editar ${item.name}`} className="text-gray-400 hover:text-gray-200 min-w-9 min-h-11 flex items-center justify-center">
                       <IconEdit size={16} />
                     </button>
@@ -204,7 +250,7 @@ export default function Catalog({ onAddToList }) {
                           </button>
                         </div>
                       ))}
-                      <p className="text-gray-600 text-[11px] mt-1">Preço errado? Remova pela lixeira. As compras não mudam.</p>
+                      <p className="text-gray-600 text-xs mt-1">Preço errado? Remova pela lixeira. As compras não mudam.</p>
                     </div>
                   </div>
                 )}

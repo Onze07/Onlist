@@ -233,3 +233,18 @@ test('preços de uma compra: acha no catálogo pela data, mercado e preço', asy
   assert.equal(out[0].removed[0].price, 34.39)
   assert.equal(out[0].lastPrice, 6.37)
 })
+
+test('ordem ao arrastar: entre vizinhos, início e fim', async () => {
+  const { dropOrder, sortEntries, sortKey } = await import('../src/lib/reorder.js')
+  const items = sortEntries([
+    { id: 'b', order: 2000 },
+    { id: 'a', createdAt: { toMillis: () => 1000 } },
+    { id: 'c', order: 3000 },
+  ])
+  assert.deepEqual(items.map(e => e.id), ['a', 'b', 'c'])
+  assert.equal(dropOrder(items, 'b'), 1500)          // entre a e b
+  assert.equal(dropOrder(items, 'a'), 0)             // antes do primeiro
+  assert.equal(dropOrder(items, null), 4000)         // no fim
+  assert.equal(dropOrder([], null) > 0, true)        // categoria vazia
+  assert.equal(sortKey({ order: 5 }), 5)
+})

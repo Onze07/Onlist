@@ -163,13 +163,13 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
         </div>
         {categoryError && <p className="text-red-400 text-xs -mt-1 mb-2 px-1">Escolha uma categoria</p>}
         {!categoryError && CATEGORY_EXAMPLES[form.category] && (
-          <p className="text-gray-600 text-[11px] -mt-1 mb-2 px-1">{form.category}: {CATEGORY_EXAMPLES[form.category]}</p>
+          <p className="text-gray-600 text-xs -mt-1 mb-2 px-1">{form.category}: {CATEGORY_EXAMPLES[form.category]}</p>
         )}
 
         {/* Quantidade + valores */}
         <div className="grid grid-cols-3 gap-2 mb-2">
           <div>
-            <label className="text-gray-500 text-[11px] mb-0.5 block px-1">Qtd</label>
+            <label className="text-gray-500 text-xs mb-0.5 block px-1">Qtd</label>
             <div className="flex items-center bg-gray-800 rounded-xl h-10">
               <button type="button" aria-label="Diminuir quantidade" onClick={() => set('qty', String(Math.max(step, Math.round(((parsePrice(form.qty) || 0) - step) * 10) / 10)).replace('.', ','))}
                 className="w-8 h-full text-white text-lg flex-shrink-0">−</button>
@@ -180,12 +180,12 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
             </div>
           </div>
           <div>
-            <label className="text-gray-500 text-[11px] mb-0.5 block px-1">Valor/{form.unit}</label>
+            <label className="text-gray-500 text-xs mb-0.5 block px-1">Valor/{form.unit}</label>
             <MoneyInput value={form.pricePerUnit} onChange={v => set('pricePerUnit', v)} decimals={decimals}
               className={`w-full h-10 px-2.5 text-base ${field}`} />
           </div>
           <div>
-            <label className="text-gray-500 text-[11px] mb-0.5 block px-1">Total</label>
+            <label className="text-gray-500 text-xs mb-0.5 block px-1">Total</label>
             <MoneyInput value={form.totalPrice} onChange={v => set('totalPrice', v)} decimals={2}
               className={`w-full h-10 px-2.5 text-base ${field}`} />
           </div>

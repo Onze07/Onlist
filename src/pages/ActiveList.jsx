@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   collection, onSnapshot, addDoc, updateDoc, deleteDoc,
-  doc, setDoc, serverTimestamp, getDocs, query, orderBy
+  doc, setDoc, serverTimestamp, getDocs, query, orderBy, deleteField
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { commitInChunks, localDate, priceHistoryWrite, queueWrite } from '../lib/firestore'
@@ -22,6 +22,9 @@ import { usePresence } from '../lib/usePresence'
 import { cheapest } from '../lib/prices'
 import { IconChevronDown, IconCheck, IconPlus, IconX, IconBell, IconScale, IconUndo, IconTrash, IconCalc, IconBadge, IconCamera, IconCart, IconChevronRight } from '../components/Icon'
 import PriceCalculator from '../components/PriceCalculator'
+import SwipeRow from '../components/SwipeRow'
+import { dropOrder, sortEntries } from '../lib/reorder'
+import { useListDrag } from '../lib/useListDrag'
 import ActionChip from '../components/ActionChip'
 import { orderCategories } from '../lib/categories'
 
@@ -30,7 +33,7 @@ function fmt(n) {
   return (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled }) {
+export default function ActiveList() {
   const { familyId, userDoc } = useFamily()
   const user = useAuth()
   const decimals = userDoc?.priceDecimals === 3 ? 3 : 2
@@ -122,21 +125,6 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
     })
   }, [familyId])
 
-  // Handle add from catalog
-  useEffect(() => {
-    if (!pendingAddFromCatalog) return
-    setPrefillItem({
-      name: pendingAddFromCatalog.name,
-      category: pendingAddFromCatalog.category || 'Mercearia',
-      unit: pendingAddFromCatalog.unit || 'un',
-      pricePerUnit: pendingAddFromCatalog.lastPrice || 0,
-      obs: '', brand: '', qty: 1,
-      totalPrice: pendingAddFromCatalog.lastPrice || 0,
-    })
-    setShowForm(true)
-    onCatalogItemHandled()
-  }, [pendingAddFromCatalog, onCatalogItemHandled])
-
   function selectList(id, name) {
     setListId(id); setListName(name)
     try { localStorage.setItem(`lastList_${familyId}`, JSON.stringify({ id, name })) } catch { /* ignora */ }
@@ -183,8 +171,36 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       groups[cat].push(item)
     }
     // Categoria antiga ou desconhecida não some da lista
-    return orderCategories(Object.keys(groups)).map(c => ({ cat: c, items: groups[c] }))
+    return orderCategories(Object.keys(groups)).map(c => ({ cat: c, items: sortEntries(groups[c]) }))
   }
+
+  // Soltou o item arrastado: nova posição e, se mudou de categoria, corrige também no catálogo
+  function handleDrop(id, { cat, beforeId }) {
+    const entry = pending.find(e => e.id === id)
+    if (!entry) return
+    const sameCat = (entry.category || 'Outros') === cat
+    const items = sortEntries(pending.filter(e => (e.category || 'Outros') === cat && e.id !== id))
+    const order = dropOrder(items, beforeId)
+    const updates = { order, ...(sameCat ? {} : { category: cat }) }
+    queueWrite(updateDoc(entryRef(id), updates), 'mover item')
+    const key = entry.name.toLowerCase()
+    if (!sameCat && catalog[key]) {
+      queueWrite(setDoc(doc(db, 'families', familyId, 'catalog', key), { category: cat }, { merge: true }), 'corrigir categoria')
+    }
+    if (!sameCat) {
+      const prev = { category: entry.category || 'Outros', order: typeof entry.order === 'number' ? entry.order : deleteField() }
+      toast(`"${entry.name}" movido para ${cat}.`, {
+        action: {
+          label: 'Desfazer',
+          run: () => {
+            queueWrite(updateDoc(entryRef(id), prev), 'desfazer')
+            if (catalog[key]) queueWrite(setDoc(doc(db, 'families', familyId, 'catalog', key), { category: prev.category }, { merge: true }), 'desfazer')
+          },
+        },
+      })
+    }
+  }
+  const { drag, start: startDrag, move: moveDrag, end: endDrag } = useListDrag(handleDrop)
 
   function doCheck(entry, priceOverride) {
     const updates = { checked: true, checkedBy: user.uid, checkedAt: serverTimestamp() }
@@ -427,7 +443,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
   return (
     <div className="flex flex-col min-h-svh bg-gray-900">
       {/* Header */}
-      <div className="px-4 pt-12 pb-3 border-b border-gray-800">
+      <div className="px-4 pb-3 border-b border-gray-800 header-safe">
         <button onClick={() => setShowManager(true)} aria-label="Trocar de lista"
           className="inline-flex items-center gap-2 mb-1.5 -ml-1 pl-3 pr-2.5 py-1 rounded-full bg-gray-800/70 border border-gray-700 active:bg-gray-700">
           <h1 className="text-white text-lg font-semibold">{listName || '...'}</h1>
@@ -445,7 +461,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       <PresenceBanner people={othersShopping} />
 
       {/* Ações: ícones conhecidos sem texto, para caber tudo numa linha */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-800">
+      <div className="flex items-center gap-1.5 px-4 py-2 border-b border-gray-800">
         <ActionChip icon={<IconCalc size={16} />} label="Qual compensa? (preço por kg/L/un)" onClick={() => setShowCalc(true)} />
         {entries.length > 0 && (
           <ActionChip icon={<IconScale size={15} />} onClick={() => setShowCompare(true)} label="Comparar preços entre mercados">Comparar</ActionChip>
@@ -464,33 +480,53 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
 
       {/* List */}
       <div className="flex-1 overflow-y-auto pb-28">
+        {/* Lista vazia: o botão de adicionar fica no meio da tela */}
         {entries.length === 0 && (
-          <div className="text-center mt-20 px-8">
+          <div className="min-h-[55svh] flex flex-col items-center justify-center text-center px-8">
             <IconBadge><IconCart size={24} /></IconBadge>
-            <p className="text-white text-sm font-medium mt-4">Lista vazia</p>
-            <p className="text-gray-500 text-xs mt-1">Adicione o que precisa comprar. Quem está na família vê na hora.</p>
+            <p className="text-white text-base font-medium mt-4">Lista vazia</p>
+            <p className="text-gray-500 text-sm mt-1 mb-6">Adicione o que precisa comprar. Quem está na família vê na hora.</p>
+            <button onClick={() => { setEditItem(null); setPrefillItem(null); setShowForm(true) }}
+              className="btn-brand font-semibold px-8 min-h-12 rounded-2xl flex items-center justify-center gap-2 shadow-xl">
+              <IconPlus /> Adicionar item
+            </button>
           </div>
         )}
 
         {groupBy(pending).map(({ cat, items }) => (
           <div key={cat}>
-            <p className="text-gray-600 text-xs uppercase tracking-wider px-4 pt-4 pb-1">{cat}</p>
+            <p data-cat-header={cat} data-first-id={items.find(e => e.id !== drag?.id)?.id || ''}
+              className={`text-xs uppercase tracking-wider px-4 pt-4 pb-1 ${drag && drag.target?.cat === cat ? 'text-green-400' : 'text-gray-600'}`}>{cat}</p>
             {items.map((entry, i) => {
+              const nextId = items.slice(i + 1).find(e => e.id !== drag?.id)?.id || ''
+              const dropHere = drag?.target && drag.target.cat === cat && drag.target.beforeId === entry.id && entry.id !== drag.id
               const catKey = entry.name.toLowerCase()
               const catalogItem = catalog[catKey]
               const lastPrice = catalogItem?.lastPrice
               const priceDiff = lastPrice && entry.pricePerUnit > 0 && Math.abs(entry.pricePerUnit - lastPrice) > 0.01
                 ? entry.pricePerUnit - lastPrice : null
+              const isDragged = drag?.id === entry.id
               return (
-                <EntryRow key={entry.id} entry={entry} priceDiff={priceDiff}
-                  cheaper={cheaperHint(entry, catalogItem)}
-                  isLast={i === items.length - 1}
-                  onCheck={() => toggleCheck(entry)}
-                  onEdit={() => { setEditItem(entry); setPrefillItem(null); setShowForm(true) }}
-                  onDelete={() => handleDelete(entry.id)}
-                />
+                <div key={entry.id} data-entry-id={entry.id} data-cat={cat} data-next-id={nextId}
+                  className={isDragged ? 'relative z-20 pointer-events-none shadow-2xl ring-1 ring-green-500/50 rounded-lg' : ''}
+                  style={isDragged ? { transform: `translateY(${drag.dy}px) scale(1.02)` } : undefined}>
+                  {dropHere && <div className="h-0.5 bg-green-500 mx-4 rounded-full" aria-hidden="true" />}
+                  <EntryRow entry={entry} priceDiff={priceDiff}
+                    cheaper={cheaperHint(entry, catalogItem)}
+                    isLast={i === items.length - 1}
+                    onCheck={() => toggleCheck(entry)}
+                    onEdit={() => { setEditItem(entry); setPrefillItem(null); setShowForm(true) }}
+                    onDelete={() => handleDelete(entry.id)}
+                    onLongPress={(x, y) => startDrag(entry.id, cat, x, y)}
+                    onDragMove={moveDrag}
+                    onDragEnd={endDrag}
+                  />
+                </div>
               )
             })}
+            {drag?.target && !drag.target.initial && drag.target.cat === cat && !drag.target.beforeId && (
+              <div className="h-0.5 bg-green-500 mx-4 rounded-full" aria-hidden="true" />
+            )}
           </div>
         ))}
 
@@ -519,9 +555,10 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       </div>
 
       {/* Ações principais: adicionar e, quando há itens no carrinho, finalizar */}
+      {entries.length > 0 && (
       <div className="fixed bottom-16 left-0 right-0 max-w-lg mx-auto px-4 pb-2 flex gap-2">
         <button onClick={() => { setEditItem(null); setPrefillItem(null); setShowForm(true) }}
-          className={`${checked.length > 0 ? 'flex-1' : 'w-full'} bg-gray-800 border border-gray-700 text-gray-200 font-medium py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-xl text-sm active:bg-gray-700`}>
+          className={`${checked.length > 0 ? 'flex-1' : 'w-full'} btn-brand font-semibold py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-xl text-sm`}>
           <IconPlus /> {checked.length > 0 ? 'Item' : 'Adicionar item'}
         </button>
         {checked.length > 0 && (
@@ -531,6 +568,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
           </button>
         )}
       </div>
+      )}
 
       {overlays}
 
@@ -560,8 +598,10 @@ function cheaperHint(entry, catalogItem) {
   return best
 }
 
-function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked, priceDiff, cheaper }) {
+function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked, priceDiff, cheaper, onLongPress, onDragMove, onDragEnd }) {
   return (
+    <SwipeRow onSwipeRight={onCheck} onSwipeLeft={onDelete} checked={!!isChecked}
+      onLongPress={onLongPress} onDragMove={onDragMove} onDragEnd={onDragEnd}>
     <div className={`flex items-center gap-1 px-4 py-1 ${!isLast ? 'border-b border-gray-800/60' : ''}`}>
       {/* Área de toque de 44px; o círculo visível continua pequeno */}
       <button onClick={onCheck} aria-label={isChecked ? `Desmarcar ${entry.name}` : `Marcar ${entry.name} como pego`} aria-pressed={!!isChecked}
@@ -574,7 +614,7 @@ function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked
 
       <div className="flex-1 min-w-0 cursor-pointer py-1.5" onClick={onEdit}>
         <span className={`text-sm ${isChecked ? 'line-through text-gray-600' : 'text-white'}`}>{entry.name}</span>
-        {entry.brand && <span className="text-[10px] text-gray-300 bg-gray-800 border border-gray-700 px-1.5 py-0.5 rounded ml-2 align-middle">{entry.brand}</span>}
+        {entry.brand && <span className="text-xs text-gray-300 bg-gray-800 border border-gray-700 px-1.5 py-0.5 rounded ml-2 align-middle">{entry.brand}</span>}
         {entry.obs && <span className="text-gray-600 text-xs ml-2">{entry.obs}</span>}
         <div className="text-gray-600 text-xs mt-0.5">
           {entry.qty} {entry.unit}
@@ -586,7 +626,7 @@ function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked
           )}
         </div>
         {cheaper && (
-          <div className="text-[11px] text-emerald-400/80 mt-0.5 truncate">
+          <div className="text-xs text-emerald-400/80 mt-0.5 truncate">
             {Number(cheaper.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} no {cheaper.mercado}
           </div>
         )}
@@ -603,6 +643,7 @@ function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked
         </button>
       </div>
     </div>
+    </SwipeRow>
   )
 }
 

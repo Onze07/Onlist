@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Base 17px; "ampliado" (Conta → Aparência) usa 19px. Tudo do app escala junto (rem). */
+html { font-size: 106.25%; }
+html[data-font="large"] { font-size: 118.75%; }
+
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
@@ -7,8 +11,8 @@
 
 body {
   margin: 0;
-  background: #111827;
-  color: #f9fafb;
+  background: var(--color-gray-900);
+  color: var(--color-gray-50);
   font-family: system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
@@ -39,3 +43,64 @@ input, select, textarea, button {
     scroll-behavior: auto !important;
   }
 }
+
+/* Cabeçalho das abas: abaixo da barra de status/ilha dinâmica do iPhone (app em tela cheia) */
+.header-safe {
+  padding-top: max(3rem, calc(env(safe-area-inset-top) + 0.75rem));
+}
+
+/* Faixa da barra de status: o que rola por baixo não aparece borrado atrás do relógio */
+.status-bar-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: env(safe-area-inset-top);
+  background: var(--color-gray-900);
+  z-index: 45;
+  pointer-events: none;
+}
+
+/* Amarelo da logo: ações principais de adicionar */
+.btn-brand { background: #F9D14C; color: #1f2937; }
+.btn-brand:active { background: #eec23a; }
+
+/* ---------- Modo claro ----------
+   O app foi desenhado no escuro com a escala gray do Tailwind. No claro a escala inverte
+   (fundo claro, texto escuro) e os tons de destaque escurecem para manter o contraste. */
+html[data-theme="light"] {
+  color-scheme: light;
+  --color-gray-950: oklch(96.7% 0.003 264.542);
+  --color-gray-900: oklch(98.5% 0.002 247.839);
+  --color-gray-800: oklch(100% 0 0);
+  --color-gray-700: oklch(92.8% 0.006 264.531);
+  --color-gray-600: oklch(62% 0.025 260);
+  --color-gray-500: oklch(52% 0.027 264.364);
+  --color-gray-400: oklch(44.6% 0.03 256.802);
+  --color-gray-300: oklch(37.3% 0.034 259.733);
+  --color-gray-200: oklch(27.8% 0.033 256.848);
+  --color-gray-100: oklch(21% 0.034 264.665);
+  --color-gray-50: oklch(13% 0.028 261.692);
+  --color-green-200: oklch(44.8% 0.119 151.328);
+  --color-green-300: oklch(52.7% 0.154 150.069);
+  --color-green-400: oklch(52.7% 0.154 150.069);
+  --color-emerald-300: oklch(50.8% 0.118 165.612);
+  --color-emerald-400: oklch(50.8% 0.118 165.612);
+  --color-red-300: oklch(57.7% 0.245 27.325);
+  --color-red-400: oklch(57.7% 0.245 27.325);
+  --color-amber-100: oklch(47.3% 0.137 46.201);
+  --color-amber-200: oklch(47.3% 0.137 46.201);
+  --color-amber-300: oklch(55.5% 0.163 48.998);
+  --color-amber-400: oklch(55.5% 0.163 48.998);
+  --color-blue-300: oklch(48.8% 0.243 264.376);
+  --color-blue-400: oklch(48.8% 0.243 264.376);
+}
+/* Texto branco vira escuro, menos sobre botões coloridos (verde, vermelho, âmbar) */
+html[data-theme="light"] .text-white:not([class*="bg-green-"]):not([class*="bg-red-"]):not([class*="bg-amber-"]):not([class*="bg-blue-"]) {
+  color: oklch(21% 0.034 264.665);
+}
+/* Texto escuro já pensado para fundo claro (botão do Google, botões amarelos) continua escuro */
+html[data-theme="light"] .text-gray-800 { color: oklch(27.8% 0.033 256.848); }
+html[data-theme="light"] .text-gray-900 { color: oklch(21% 0.034 264.665); }
+/* Cartões brancos sobre fundo claro: sombra leve no lugar do contraste do escuro */
+html[data-theme="light"] .shadow-xl { box-shadow: 0 8px 24px -8px rgb(0 0 0 / 0.18); }

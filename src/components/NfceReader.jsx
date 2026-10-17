@@ -324,7 +324,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
                   </p>
                 )
               })()}
-              <p className="text-gray-600 text-[11px] mt-1">A chave fica embaixo do QR no cupom. No app Nota Legal, dá para copiar a chave ou o link "Visualizar NFC-e".</p>
+              <p className="text-gray-600 text-xs mt-1">A chave fica embaixo do QR no cupom. No app Nota Legal, dá para copiar a chave ou o link "Visualizar NFC-e".</p>
             </div>
           </div>
         )}
@@ -420,7 +420,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
                     <div className="flex-1 min-w-0">
                       <p className="text-gray-400 text-xs truncate">{r.nf.name}</p>
                       <p className="text-gray-500 text-xs">{qtyText(r.nf.qty)} {r.nf.unit.toLowerCase()} × {fmt(r.nf.unitPrice)} = <span className="text-gray-300">{fmt(r.nf.total)}</span></p>
-                      {!r.include && <p className="text-amber-300/90 text-[11px] mt-0.5">Sem acompanhar preço · conta só no total</p>}
+                      {!r.include && <p className="text-amber-300/90 text-xs mt-0.5">Sem acompanhar preço · conta só no total</p>}
                     </div>
                   </div>
 
@@ -463,7 +463,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
                       </select>
                     )}
 
-                    <div className="flex flex-wrap gap-x-3 mt-1.5 text-[11px]">
+                    <div className="flex flex-wrap gap-x-3 mt-1.5 text-xs">
                       {r.target.reason === 'lembrado' && <span className="text-blue-300">lembrado da última nota</span>}
                       {x.converted && <span className="text-emerald-300">{qtyText(x.qty)} {x.unit} · {fmt(x.unitPrice)}/{x.unit}</span>}
                       {inList && <span className="text-green-400">✓ estava na lista</span>}
