@@ -218,3 +218,7 @@ export function IconBadge({ children, tone = 'gray' }) {
   const tones = { gray: 'bg-gray-800 text-gray-400', green: 'bg-green-500/10 text-green-400', amber: 'bg-amber-500/10 text-amber-300' }
   return <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto ${tones[tone]}`} aria-hidden="true">{children}</div>
 }
+
+export function IconSort({ size = 16 }) {
+  return <Svg size={size}><path d="M3 6h10M3 12h7M3 18h4" /><path d="M18 4v16M15 17l3 3 3-3" /></Svg>
+}

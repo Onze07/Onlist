@@ -223,7 +223,7 @@ export default function Account() {
                     const who = p?.name || 'esta pessoa'
                     if (action === 'admin') run(() => setAdmin(uid, true))
                     if (action === 'unadmin') run(() => setAdmin(uid, false))
-                    if (action === 'remove' && await ask({ title: `Remover ${who} da família?`, message: 'A pessoa perde acesso às listas e aos registros.', confirm: 'Remover', danger: true })) run(() => removeMember(uid))
+                    if (action === 'remove' && await ask({ title: `Remover ${who} da família?`, message: 'A pessoa perde acesso às listas e às compras.', confirm: 'Remover', danger: true })) run(() => removeMember(uid))
                     if (action === 'owner' && await ask({ title: `Passar a posse para ${who}?`, message: 'Você vira admin e pode sair da família depois.', confirm: 'Passar a posse' })) {
                       run(() => transferOwnership(uid))
                     }

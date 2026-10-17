@@ -20,13 +20,13 @@ import { ask, toast } from '../lib/feedback'
 import { purchaseId } from '../lib/purchaseId'
 import { usePresence } from '../lib/usePresence'
 import { cheapest } from '../lib/prices'
-import { IconChevronDown, IconCheck, IconPlus, IconX, IconBell, IconScale, IconUndo, IconTrash, IconCalc, IconBadge, IconCamera, IconCart, IconChevronRight } from '../components/Icon'
+import { IconChevronDown, IconCheck, IconPlus, IconX, IconBell, IconScale, IconUndo, IconTrash, IconCalc, IconBadge, IconCamera, IconCart, IconChevronRight, IconSort } from '../components/Icon'
 import PriceCalculator from '../components/PriceCalculator'
 import SwipeRow from '../components/SwipeRow'
 import { dropOrder, sortEntries } from '../lib/reorder'
 import { useListDrag } from '../lib/useListDrag'
 import ActionChip from '../components/ActionChip'
-import { orderCategories } from '../lib/categories'
+import { groupForDisplay, useSortMode } from '../lib/sortMode'
 
 
 function fmt(n) {
@@ -163,16 +163,11 @@ export default function ActiveList() {
   const totalChecked = checked.reduce((s, e) => s + (e.totalPrice || 0), 0)
   const totalAll = entries.reduce((s, e) => s + (e.totalPrice || 0), 0)
 
+  // Categorias (mais itens primeiro, ordem arrastada dentro de cada uma) ou A–Z
   function groupBy(items) {
-    const groups = {}
-    for (const item of items) {
-      const cat = item.category || 'Outros'
-      if (!groups[cat]) groups[cat] = []
-      groups[cat].push(item)
-    }
-    // Categoria antiga ou desconhecida não some da lista
-    return orderCategories(Object.keys(groups)).map(c => ({ cat: c, items: sortEntries(groups[c]) }))
+    return groupForDisplay(items, sortMode, sortEntries)
   }
+
 
   // Soltou o item arrastado: nova posição e, se mudou de categoria, corrige também no catálogo
   function handleDrop(id, { cat, beforeId }) {
@@ -201,6 +196,7 @@ export default function ActiveList() {
     }
   }
   const { drag, start: startDrag, move: moveDrag, end: endDrag } = useListDrag(handleDrop)
+  const [sortMode, setSortMode] = useSortMode()
 
   function doCheck(entry, priceOverride) {
     const updates = { checked: true, checkedBy: user.uid, checkedAt: serverTimestamp() }
@@ -463,8 +459,11 @@ export default function ActiveList() {
       {/* Ações: ícones conhecidos sem texto, para caber tudo numa linha */}
       <div className="flex items-center gap-1.5 px-4 py-2 border-b border-gray-800">
         <ActionChip icon={<IconCalc size={16} />} label="Qual compensa? (preço por kg/L/un)" onClick={() => setShowCalc(true)} />
+        <ActionChip icon={<IconSort size={16} />} tone={sortMode === 'alpha' ? 'accent' : 'default'}
+          label={sortMode === 'alpha' ? 'Ordem: A–Z (tocar para categorias)' : 'Ordem: categorias (tocar para A–Z)'}
+          onClick={() => { const next = sortMode === 'alpha' ? 'category' : 'alpha'; setSortMode(next); toast(next === 'alpha' ? 'Ordem alfabética (A–Z).' : 'Por categoria, as com mais itens primeiro.') }} />
         {entries.length > 0 && (
-          <ActionChip icon={<IconScale size={15} />} onClick={() => setShowCompare(true)} label="Comparar preços entre mercados">Comparar</ActionChip>
+          <ActionChip icon={<IconScale size={15} />} onClick={() => setShowCompare(true)} label="Comparar preços entre mercados" />
         )}
         {pending.length > 0 && (
           <ActionChip icon={<IconBell size={16} />} label="Avisar alguém" onClick={() => setShowNotify(true)} />
@@ -494,9 +493,11 @@ export default function ActiveList() {
         )}
 
         {groupBy(pending).map(({ cat, items }) => (
-          <div key={cat}>
-            <p data-cat-header={cat} data-first-id={items.find(e => e.id !== drag?.id)?.id || ''}
-              className={`text-xs uppercase tracking-wider px-4 pt-4 pb-1 ${drag && drag.target?.cat === cat ? 'text-green-400' : 'text-gray-600'}`}>{cat}</p>
+          <div key={cat || 'az'}>
+            {cat ? (
+              <p data-cat-header={cat} data-first-id={items.find(e => e.id !== drag?.id)?.id || ''}
+                className={`text-xs uppercase tracking-wider px-4 pt-4 pb-1 ${drag && drag.target?.cat === cat ? 'text-green-400' : 'text-gray-600'}`}>{cat}</p>
+            ) : <div className="pt-2" />}
             {items.map((entry, i) => {
               const nextId = items.slice(i + 1).find(e => e.id !== drag?.id)?.id || ''
               const dropHere = drag?.target && drag.target.cat === cat && drag.target.beforeId === entry.id && entry.id !== drag.id
@@ -517,7 +518,7 @@ export default function ActiveList() {
                     onCheck={() => toggleCheck(entry)}
                     onEdit={() => { setEditItem(entry); setPrefillItem(null); setShowForm(true) }}
                     onDelete={() => handleDelete(entry.id)}
-                    onLongPress={(x, y) => startDrag(entry.id, cat, x, y)}
+                    onLongPress={cat ? (x, y) => startDrag(entry.id, cat, x, y) : undefined}
                     onDragMove={moveDrag}
                     onDragEnd={endDrag}
                   />
@@ -538,8 +539,8 @@ export default function ActiveList() {
               {showChecked ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
             </button>
             {showChecked && groupBy(checked).map(({ cat, items }) => (
-              <div key={cat} className="opacity-50">
-                <p className="text-gray-600 text-xs uppercase tracking-wider px-4 pt-2 pb-1">{cat}</p>
+              <div key={cat || 'az'} className="opacity-50">
+                {cat && <p className="text-gray-600 text-xs uppercase tracking-wider px-4 pt-2 pb-1">{cat}</p>}
                 {items.map((entry, i) => (
                   <EntryRow key={entry.id} entry={entry} checked
                     isLast={i === items.length - 1}

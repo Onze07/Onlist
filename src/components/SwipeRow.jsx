@@ -57,7 +57,8 @@ export default function SwipeRow({ children, onSwipeRight, onSwipeLeft, rightLab
         return
       } else return
     }
-    if (mode.current === 'h') setDx(Math.max(-MAX, Math.min(MAX, mx)))
+    // Só abre para o lado que tem ação
+    if (mode.current === 'h') setDx(Math.max(onSwipeLeft ? -MAX : 0, Math.min(onSwipeRight ? MAX : 0, mx)))
   }
 
   function up() {
