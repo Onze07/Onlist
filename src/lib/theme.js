@@ -14,6 +14,7 @@ function resolved(theme) {
 export function applyTheme(theme = getTheme()) {
   const mode = resolved(theme)
   document.documentElement.dataset.theme = mode
+  document.documentElement.dataset.font = getFontSize()
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', mode === 'light' ? '#f9fafb' : '#111827')
 }
 
@@ -25,3 +26,13 @@ export function setTheme(theme) {
 
 // Celular trocou de claro/escuro: acompanha quando o tema é "sistema"
 media?.addEventListener?.('change', () => { if (getTheme() === 'system') applyTheme('system') })
+
+// Tamanho do texto: 'normal' (padrão) ou 'large' (ampliado). Fica salvo neste aparelho.
+export function getFontSize() {
+  try { return localStorage.getItem('fontSize') === 'large' ? 'large' : 'normal' } catch { return 'normal' }
+}
+
+export function setFontSize(size) {
+  try { localStorage.setItem('fontSize', size) } catch { /* ignora */ }
+  document.documentElement.dataset.font = size
+}

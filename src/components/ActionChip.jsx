@@ -9,7 +9,7 @@ export default function ActionChip({ icon, children, label, onClick, tone = 'def
   }
   return (
     <button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={label}
-      className={`inline-flex items-center justify-center gap-1.5 flex-shrink-0 whitespace-nowrap text-xs font-medium rounded-full border transition-colors disabled:opacity-40 ${children ? 'px-3 h-10' : 'w-10 h-10'} ${tones[tone]} ${className}`}>
+      className={`inline-flex items-center justify-center gap-1.5 flex-shrink-0 whitespace-nowrap text-xs font-medium rounded-full border transition-colors disabled:opacity-40 ${children ? 'px-3 h-[40px]' : 'w-[40px] h-[40px]'} ${tones[tone]} ${className}`}>
       {icon}
       {children}
     </button>

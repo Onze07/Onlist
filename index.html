@@ -11,6 +11,7 @@
         var t = localStorage.getItem('theme') || 'system'
         if (t === 'system') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
         document.documentElement.dataset.theme = t
+        document.documentElement.dataset.font = localStorage.getItem('fontSize') === 'large' ? 'large' : 'normal'
       } catch (e) { document.documentElement.dataset.theme = 'dark' }
     </script>
     <meta name="apple-mobile-web-app-capable" content="yes" />

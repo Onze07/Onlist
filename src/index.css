@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
-/* Base 17px (era 16px): todas as fontes do app ficam um pouco maiores */
+/* Base 17px; "ampliado" (Conta → Aparência) usa 19px. Tudo do app escala junto (rem). */
 html { font-size: 106.25%; }
+html[data-font="large"] { font-size: 118.75%; }
 
 * {
   box-sizing: border-box;

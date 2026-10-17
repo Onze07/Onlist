@@ -13,7 +13,7 @@ import { inviteLink, inviteText } from '../lib/invite'
 import InviteQr from '../components/InviteQr'
 import SwitchFamilySheet from '../components/SwitchFamilySheet'
 import { ask, showError, toast } from '../lib/feedback'
-import { getTheme, setTheme } from '../lib/theme'
+import { getFontSize, getTheme, setFontSize, setTheme } from '../lib/theme'
 
 function Avatar({ profile, size = 36 }) {
   const initial = (profile?.name || profile?.email || '?').trim().charAt(0).toUpperCase()
@@ -50,6 +50,7 @@ export default function Account() {
   } = useFamily()
   const decimals = userDoc?.priceDecimals === 3 ? 3 : 2
   const [theme, setThemeState] = useState(getTheme)
+  const [fontSize, setFontSizeState] = useState(getFontSize)
   const install = useInstall()
   const [sheet, setSheet] = useState(null)
   const [push, setPush] = useState(() => pushStatus())
@@ -301,13 +302,25 @@ export default function Account() {
       </Section>
 
       <Section title="App">
-        <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between gap-3">
+        <div className="px-4 py-3 border-b border-gray-800 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <p className="text-white text-sm">Aparência</p>
-          <div className="flex bg-gray-900 rounded-lg p-0.5 border border-gray-700" role="radiogroup" aria-label="Aparência">
+          <div className="flex bg-gray-900 rounded-lg p-0.5 border border-gray-700 ml-auto" role="radiogroup" aria-label="Aparência">
             {[['system', 'Sistema'], ['light', 'Claro'], ['dark', 'Escuro']].map(([value, label]) => (
               <button key={value} role="radio" aria-checked={theme === value}
                 onClick={() => { setTheme(value); setThemeState(value) }}
                 className={`px-3 min-h-9 text-sm rounded-md ${theme === value ? 'bg-green-500 text-white' : 'text-gray-400'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="px-4 py-3 border-b border-gray-800 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <p className="text-white text-sm">Tamanho do texto</p>
+          <div className="flex bg-gray-900 rounded-lg p-0.5 border border-gray-700 ml-auto" role="radiogroup" aria-label="Tamanho do texto">
+            {[['normal', 'Padrão'], ['large', 'Ampliado']].map(([value, label]) => (
+              <button key={value} role="radio" aria-checked={fontSize === value}
+                onClick={() => { setFontSize(value); setFontSizeState(value) }}
+                className={`px-3 min-h-9 text-sm rounded-md ${fontSize === value ? 'bg-green-500 text-white' : 'text-gray-400'}`}>
                 {label}
               </button>
             ))}

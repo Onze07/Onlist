@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   collection, onSnapshot, addDoc, updateDoc, deleteDoc,
-  doc, setDoc, serverTimestamp, getDocs, query, orderBy
+  doc, setDoc, serverTimestamp, getDocs, query, orderBy, deleteField
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { commitInChunks, localDate, priceHistoryWrite, queueWrite } from '../lib/firestore'
@@ -23,6 +23,8 @@ import { cheapest } from '../lib/prices'
 import { IconChevronDown, IconCheck, IconPlus, IconX, IconBell, IconScale, IconUndo, IconTrash, IconCalc, IconBadge, IconCamera, IconCart, IconChevronRight } from '../components/Icon'
 import PriceCalculator from '../components/PriceCalculator'
 import SwipeRow from '../components/SwipeRow'
+import { dropOrder, sortEntries } from '../lib/reorder'
+import { useListDrag } from '../lib/useListDrag'
 import ActionChip from '../components/ActionChip'
 import { orderCategories } from '../lib/categories'
 
@@ -169,8 +171,36 @@ export default function ActiveList() {
       groups[cat].push(item)
     }
     // Categoria antiga ou desconhecida não some da lista
-    return orderCategories(Object.keys(groups)).map(c => ({ cat: c, items: groups[c] }))
+    return orderCategories(Object.keys(groups)).map(c => ({ cat: c, items: sortEntries(groups[c]) }))
   }
+
+  // Soltou o item arrastado: nova posição e, se mudou de categoria, corrige também no catálogo
+  function handleDrop(id, { cat, beforeId }) {
+    const entry = pending.find(e => e.id === id)
+    if (!entry) return
+    const sameCat = (entry.category || 'Outros') === cat
+    const items = sortEntries(pending.filter(e => (e.category || 'Outros') === cat && e.id !== id))
+    const order = dropOrder(items, beforeId)
+    const updates = { order, ...(sameCat ? {} : { category: cat }) }
+    queueWrite(updateDoc(entryRef(id), updates), 'mover item')
+    const key = entry.name.toLowerCase()
+    if (!sameCat && catalog[key]) {
+      queueWrite(setDoc(doc(db, 'families', familyId, 'catalog', key), { category: cat }, { merge: true }), 'corrigir categoria')
+    }
+    if (!sameCat) {
+      const prev = { category: entry.category || 'Outros', order: typeof entry.order === 'number' ? entry.order : deleteField() }
+      toast(`"${entry.name}" movido para ${cat}.`, {
+        action: {
+          label: 'Desfazer',
+          run: () => {
+            queueWrite(updateDoc(entryRef(id), prev), 'desfazer')
+            if (catalog[key]) queueWrite(setDoc(doc(db, 'families', familyId, 'catalog', key), { category: prev.category }, { merge: true }), 'desfazer')
+          },
+        },
+      })
+    }
+  }
+  const { drag, start: startDrag, move: moveDrag, end: endDrag } = useListDrag(handleDrop)
 
   function doCheck(entry, priceOverride) {
     const updates = { checked: true, checkedBy: user.uid, checkedAt: serverTimestamp() }
@@ -431,7 +461,7 @@ export default function ActiveList() {
       <PresenceBanner people={othersShopping} />
 
       {/* Ações: ícones conhecidos sem texto, para caber tudo numa linha */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-800">
+      <div className="flex items-center gap-1.5 px-4 py-2 border-b border-gray-800">
         <ActionChip icon={<IconCalc size={16} />} label="Qual compensa? (preço por kg/L/un)" onClick={() => setShowCalc(true)} />
         {entries.length > 0 && (
           <ActionChip icon={<IconScale size={15} />} onClick={() => setShowCompare(true)} label="Comparar preços entre mercados">Comparar</ActionChip>
@@ -465,23 +495,38 @@ export default function ActiveList() {
 
         {groupBy(pending).map(({ cat, items }) => (
           <div key={cat}>
-            <p className="text-gray-600 text-xs uppercase tracking-wider px-4 pt-4 pb-1">{cat}</p>
+            <p data-cat-header={cat} data-first-id={items.find(e => e.id !== drag?.id)?.id || ''}
+              className={`text-xs uppercase tracking-wider px-4 pt-4 pb-1 ${drag && drag.target?.cat === cat ? 'text-green-400' : 'text-gray-600'}`}>{cat}</p>
             {items.map((entry, i) => {
+              const nextId = items.slice(i + 1).find(e => e.id !== drag?.id)?.id || ''
+              const dropHere = drag?.target && drag.target.cat === cat && drag.target.beforeId === entry.id && entry.id !== drag.id
               const catKey = entry.name.toLowerCase()
               const catalogItem = catalog[catKey]
               const lastPrice = catalogItem?.lastPrice
               const priceDiff = lastPrice && entry.pricePerUnit > 0 && Math.abs(entry.pricePerUnit - lastPrice) > 0.01
                 ? entry.pricePerUnit - lastPrice : null
+              const isDragged = drag?.id === entry.id
               return (
-                <EntryRow key={entry.id} entry={entry} priceDiff={priceDiff}
-                  cheaper={cheaperHint(entry, catalogItem)}
-                  isLast={i === items.length - 1}
-                  onCheck={() => toggleCheck(entry)}
-                  onEdit={() => { setEditItem(entry); setPrefillItem(null); setShowForm(true) }}
-                  onDelete={() => handleDelete(entry.id)}
-                />
+                <div key={entry.id} data-entry-id={entry.id} data-cat={cat} data-next-id={nextId}
+                  className={isDragged ? 'relative z-20 pointer-events-none shadow-2xl ring-1 ring-green-500/50 rounded-lg' : ''}
+                  style={isDragged ? { transform: `translateY(${drag.dy}px) scale(1.02)` } : undefined}>
+                  {dropHere && <div className="h-0.5 bg-green-500 mx-4 rounded-full" aria-hidden="true" />}
+                  <EntryRow entry={entry} priceDiff={priceDiff}
+                    cheaper={cheaperHint(entry, catalogItem)}
+                    isLast={i === items.length - 1}
+                    onCheck={() => toggleCheck(entry)}
+                    onEdit={() => { setEditItem(entry); setPrefillItem(null); setShowForm(true) }}
+                    onDelete={() => handleDelete(entry.id)}
+                    onLongPress={(x, y) => startDrag(entry.id, cat, x, y)}
+                    onDragMove={moveDrag}
+                    onDragEnd={endDrag}
+                  />
+                </div>
               )
             })}
+            {drag?.target && !drag.target.initial && drag.target.cat === cat && !drag.target.beforeId && (
+              <div className="h-0.5 bg-green-500 mx-4 rounded-full" aria-hidden="true" />
+            )}
           </div>
         ))}
 
@@ -553,9 +598,10 @@ function cheaperHint(entry, catalogItem) {
   return best
 }
 
-function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked, priceDiff, cheaper }) {
+function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked, priceDiff, cheaper, onLongPress, onDragMove, onDragEnd }) {
   return (
-    <SwipeRow onSwipeRight={onCheck} onSwipeLeft={onDelete} checked={!!isChecked}>
+    <SwipeRow onSwipeRight={onCheck} onSwipeLeft={onDelete} checked={!!isChecked}
+      onLongPress={onLongPress} onDragMove={onDragMove} onDragEnd={onDragEnd}>
     <div className={`flex items-center gap-1 px-4 py-1 ${!isLast ? 'border-b border-gray-800/60' : ''}`}>
       {/* Área de toque de 44px; o círculo visível continua pequeno */}
       <button onClick={onCheck} aria-label={isChecked ? `Desmarcar ${entry.name}` : `Marcar ${entry.name} como pego`} aria-pressed={!!isChecked}
