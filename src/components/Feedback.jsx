@@ -7,17 +7,17 @@ const TONES = {
   info: 'border-gray-700',
 }
 
-// Avisos (embaixo, acima da barra de abas) e diálogo de confirmação
+// Aviso (um por vez, por cima da barra de abas) e diálogo de confirmação
 export default function Feedback() {
   const { toasts, dialog } = useSyncExternalStore(subscribe, getState)
   return (
     <>
       <div className="fixed inset-x-0 z-[70] px-4 flex flex-col gap-2 max-w-lg mx-auto pointer-events-none"
-        style={{ bottom: 'calc(148px + env(safe-area-inset-bottom))' }} aria-live="polite">
+        style={{ bottom: 'calc(6px + env(safe-area-inset-bottom))' }} aria-live="polite">
         {toasts.map(t => (
           <div key={t.id} role={t.tone === 'error' ? 'alert' : 'status'}
-            className={`toast-in pointer-events-auto flex items-center gap-3 bg-gray-800 border ${TONES[t.tone]} text-gray-100 text-sm rounded-xl pl-4 pr-2 py-2 shadow-xl`}>
-            <span className="flex-1 py-1.5">{t.message}</span>
+            className={`toast-in pointer-events-auto flex items-center gap-3 bg-gray-800 border ${TONES[t.tone]} text-gray-100 text-sm rounded-xl pl-4 pr-1 py-0.5 shadow-xl`}>
+            <span className="flex-1 py-1.5 line-clamp-2">{t.message}</span>
             {t.action && (
               <button onClick={() => { t.action.run(); dismiss(t.id) }}
                 className="min-h-11 px-3 font-semibold text-green-400 rounded-lg active:bg-gray-700">

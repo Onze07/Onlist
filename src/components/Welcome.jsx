@@ -12,7 +12,7 @@ const SLIDES = [
   {
     icon: <IconCart size={28} />,
     title: 'No mercado',
-    text: 'Marque o que já pegou. No fim, toque em "Finalizar", informe o mercado e pronto: a compra vai para os Registros com os preços pagos.',
+    text: 'Marque o que já pegou. No fim, toque em "Finalizar", informe o mercado e pronto: a compra vai para a aba Compras com os preços pagos.',
   },
   {
     icon: <IconUsers size={28} />,

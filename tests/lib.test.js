@@ -248,3 +248,20 @@ test('ordem ao arrastar: entre vizinhos, início e fim', async () => {
   assert.equal(dropOrder([], null) > 0, true)        // categoria vazia
   assert.equal(sortKey({ order: 5 }), 5)
 })
+
+test('ordem de exibição: categorias por quantidade ou A–Z', async () => {
+  const { groupForDisplay } = await import('../src/lib/sortMode.js')
+  const items = [
+    { name: 'Sabão', category: 'Limpeza' },
+    { name: 'arroz', category: 'Mercearia' },
+    { name: 'Feijão', category: 'Mercearia' },
+    { name: 'Banana', category: 'Hortifruti' },
+  ]
+  const cats = groupForDisplay(items, 'category')
+  assert.deepEqual(cats.map(g => g.cat), ['Mercearia', 'Hortifruti', 'Limpeza']) // 2 itens primeiro; empate na ordem padrão
+  assert.deepEqual(cats[0].items.map(i => i.name), ['arroz', 'Feijão'])
+  const alpha = groupForDisplay(items, 'alpha')
+  assert.equal(alpha.length, 1)
+  assert.equal(alpha[0].cat, null)
+  assert.deepEqual(alpha[0].items.map(i => i.name), ['arroz', 'Banana', 'Feijão', 'Sabão'])
+})

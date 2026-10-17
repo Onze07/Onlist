@@ -46,7 +46,7 @@ input, select, textarea, button {
 
 /* Cabeçalho das abas: abaixo da barra de status/ilha dinâmica do iPhone (app em tela cheia) */
 .header-safe {
-  padding-top: max(3rem, calc(env(safe-area-inset-top) + 0.75rem));
+  padding-top: max(4.25rem, calc(env(safe-area-inset-top) + 1.25rem));
 }
 
 /* Faixa da barra de status: o que rola por baixo não aparece borrado atrás do relógio */
@@ -70,10 +70,10 @@ input, select, textarea, button {
    (fundo claro, texto escuro) e os tons de destaque escurecem para manter o contraste. */
 html[data-theme="light"] {
   color-scheme: light;
-  --color-gray-950: oklch(96.7% 0.003 264.542);
-  --color-gray-900: oklch(98.5% 0.002 247.839);
-  --color-gray-800: oklch(100% 0 0);
-  --color-gray-700: oklch(92.8% 0.006 264.531);
+  --color-gray-950: oklch(91% 0.006 264.531);
+  --color-gray-900: oklch(94% 0.005 264.531);
+  --color-gray-800: oklch(98.5% 0.002 247.839);
+  --color-gray-700: oklch(88.5% 0.008 262);
   --color-gray-600: oklch(62% 0.025 260);
   --color-gray-500: oklch(52% 0.027 264.364);
   --color-gray-400: oklch(44.6% 0.03 256.802);

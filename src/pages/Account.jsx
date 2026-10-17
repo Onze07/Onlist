@@ -8,6 +8,7 @@ import { userPhoto } from '../lib/user'
 import { useInstall } from '../lib/install'
 import InstallGuide from '../components/InstallGuide'
 import FeedbackSheet from '../components/FeedbackSheet'
+import TipsSheet from '../components/TipsSheet'
 import { pushStatus, enablePush, disablePush } from '../lib/push'
 import { inviteLink, inviteText } from '../lib/invite'
 import InviteQr from '../components/InviteQr'
@@ -223,7 +224,7 @@ export default function Account() {
                     const who = p?.name || 'esta pessoa'
                     if (action === 'admin') run(() => setAdmin(uid, true))
                     if (action === 'unadmin') run(() => setAdmin(uid, false))
-                    if (action === 'remove' && await ask({ title: `Remover ${who} da família?`, message: 'A pessoa perde acesso às listas e aos registros.', confirm: 'Remover', danger: true })) run(() => removeMember(uid))
+                    if (action === 'remove' && await ask({ title: `Remover ${who} da família?`, message: 'A pessoa perde acesso às listas e às compras.', confirm: 'Remover', danger: true })) run(() => removeMember(uid))
                     if (action === 'owner' && await ask({ title: `Passar a posse para ${who}?`, message: 'Você vira admin e pode sair da família depois.', confirm: 'Passar a posse' })) {
                       run(() => transferOwnership(uid))
                     }
@@ -346,6 +347,10 @@ export default function Account() {
             Instalar o app <span className="text-gray-500">→</span>
           </button>
         )}
+        <button onClick={() => setSheet('tips')}
+          className="w-full text-left px-4 py-3 text-white text-sm border-b border-gray-800 flex justify-between">
+          Dicas e atalhos <span className="text-gray-500">→</span>
+        </button>
         <button onClick={() => setSheet('feedback')}
           className="w-full text-left px-4 py-3 text-white text-sm border-b border-gray-800 flex justify-between">
           Enviar feedback <span className="text-gray-500">→</span>
@@ -373,6 +378,7 @@ export default function Account() {
 
       {sheet === 'install' && <InstallGuide onClose={() => setSheet(null)} />}
       {sheet === 'feedback' && <FeedbackSheet onClose={() => setSheet(null)} />}
+      {sheet === 'tips' && <TipsSheet onClose={() => setSheet(null)} />}
       {sheet === 'switch' && <SwitchFamilySheet onClose={() => setSheet(null)} />}
     </div>
   )

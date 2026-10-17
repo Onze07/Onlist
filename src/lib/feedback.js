@@ -25,8 +25,8 @@ export function dismiss(id) {
 export function toast(message, { tone = 'info', action, duration } = {}) {
   const id = ++seq
   const t = { id, message, tone, action }
-  // No máximo 3 na tela; o mais novo embaixo
-  set({ toasts: [...state.toasts.slice(-2), t] })
+  // Um aviso por vez: o novo substitui o anterior (tocar vários itens seguidos não empilha)
+  set({ toasts: [t] })
   const ms = duration ?? (action ? 6000 : tone === 'error' ? 7000 : 4000)
   setTimeout(() => dismiss(id), ms)
   return id

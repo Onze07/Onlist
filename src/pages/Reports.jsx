@@ -319,7 +319,7 @@ export default function Reports() {
         {tab === 'prices' && (
           <div>
             {trends.length === 0 && priceItems.length === 0 && (
-              <p className="text-gray-600 text-sm pt-4">Registros de preço aparecem aqui conforme você compra os mesmos produtos ao longo do tempo.</p>
+              <p className="text-gray-600 text-sm pt-4">Os preços aparecem aqui conforme você compra os mesmos produtos ao longo do tempo.</p>
             )}
             {suspicious.length > 0 && (
               <div className="mt-4 mb-1 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">

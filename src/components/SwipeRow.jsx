@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { IconCheck, IconTrash, IconUndo } from './Icon'
 
 const THRESHOLD = 80 // px para confirmar o gesto
@@ -9,8 +9,18 @@ const LONG_PRESS_MS = 400
 // Arrastar o item para o lado: direita = pegar (ou devolver), esquerda = remover.
 // Segurar parado (~0,4 s) e arrastar = mudar a ordem/categoria (onLongPress/onDragMove/onDragEnd).
 // Só vale gesto horizontal; rolagem vertical continua normal (touch-action: pan-y).
-export default function SwipeRow({ children, onSwipeRight, onSwipeLeft, rightLabel = 'Peguei', checked = false, onLongPress, onDragMove, onDragEnd }) {
+export default function SwipeRow({ children, onSwipeRight, onSwipeLeft, rightLabel = 'Peguei', checked = false, onLongPress, onDragMove, onDragEnd, peek = false }) {
   const [dx, setDx] = useState(0)
+
+  // "Espiar": desliza sozinho um pouco e volta, para mostrar que o gesto existe (uma vez)
+  useEffect(() => {
+    if (!peek) return
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (reduce) return
+    const t1 = setTimeout(() => setDx(64), 50)
+    const t2 = setTimeout(() => setDx(0), 900)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [peek])
   const [dragging, setDragging] = useState(false)
   const start = useRef(null)
   const mode = useRef(null) // null | 'h' | 'v' | 'drag'
@@ -57,7 +67,8 @@ export default function SwipeRow({ children, onSwipeRight, onSwipeLeft, rightLab
         return
       } else return
     }
-    if (mode.current === 'h') setDx(Math.max(-MAX, Math.min(MAX, mx)))
+    // Só abre para o lado que tem ação
+    if (mode.current === 'h') setDx(Math.max(onSwipeLeft ? -MAX : 0, Math.min(onSwipeRight ? MAX : 0, mx)))
   }
 
   function up() {

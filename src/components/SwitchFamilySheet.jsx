@@ -26,7 +26,7 @@ export default function SwitchFamilySheet({ initialCode = '', onClose }) {
     if (!valid || busy) return
     if (isOwner && mode === 'fresh' && !await ask({
       title: `Apagar os dados de "${familyName}"?`,
-      message: 'As listas, o catálogo e os registros dela serão apagados para sempre.',
+      message: 'As listas, o catálogo e as compras dela serão apagados para sempre.',
       confirm: 'Apagar e entrar', danger: true,
     })) return
     setBusy(true)
@@ -77,7 +77,7 @@ export default function SwitchFamilySheet({ initialCode = '', onClose }) {
         </div>
       ) : (
         <p className="text-gray-400 text-sm mb-4">
-          Você vai sair de "{familyName}". As listas e registros continuam lá para as outras pessoas.
+          Você vai sair de "{familyName}". As listas e compras continuam lá para as outras pessoas.
         </p>
       )}
 

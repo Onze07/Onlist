@@ -15,7 +15,7 @@ export function applyTheme(theme = getTheme()) {
   const mode = resolved(theme)
   document.documentElement.dataset.theme = mode
   document.documentElement.dataset.font = getFontSize()
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', mode === 'light' ? '#f9fafb' : '#111827')
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', mode === 'light' ? '#eceef1' : '#111827')
 }
 
 export function setTheme(theme) {

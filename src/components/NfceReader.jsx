@@ -362,7 +362,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
             <p className="text-gray-400 text-sm">
               {duplicate.mercado} · {duplicate.createdAt?.toDate?.().toLocaleDateString('pt-BR')} · {fmt(duplicate.total)}
             </p>
-            <p className="text-gray-500 text-xs max-w-xs">A mesma nota não pode ser lançada duas vezes. Para corrigir, apague o registro em Registros e leia a nota de novo.</p>
+            <p className="text-gray-500 text-xs max-w-xs">A mesma nota não pode ser lançada duas vezes. Para corrigir, apague a compra na aba Compras e leia a nota de novo.</p>
             <button onClick={onClose} className="mt-4 bg-gray-800 text-white font-semibold px-8 py-3 rounded-xl">Fechar</button>
           </div>
         )}
