@@ -22,6 +22,7 @@ import { usePresence } from '../lib/usePresence'
 import { cheapest } from '../lib/prices'
 import { IconChevronDown, IconCheck, IconPlus, IconX, IconBell, IconScale, IconUndo, IconTrash, IconCalc, IconBadge, IconCamera, IconCart, IconChevronRight } from '../components/Icon'
 import PriceCalculator from '../components/PriceCalculator'
+import SwipeRow from '../components/SwipeRow'
 import ActionChip from '../components/ActionChip'
 import { orderCategories } from '../lib/categories'
 
@@ -30,7 +31,7 @@ function fmt(n) {
   return (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled }) {
+export default function ActiveList() {
   const { familyId, userDoc } = useFamily()
   const user = useAuth()
   const decimals = userDoc?.priceDecimals === 3 ? 3 : 2
@@ -121,21 +122,6 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       setMercadoOptions(snap.docs.map(d => d.data().name))
     })
   }, [familyId])
-
-  // Handle add from catalog
-  useEffect(() => {
-    if (!pendingAddFromCatalog) return
-    setPrefillItem({
-      name: pendingAddFromCatalog.name,
-      category: pendingAddFromCatalog.category || 'Mercearia',
-      unit: pendingAddFromCatalog.unit || 'un',
-      pricePerUnit: pendingAddFromCatalog.lastPrice || 0,
-      obs: '', brand: '', qty: 1,
-      totalPrice: pendingAddFromCatalog.lastPrice || 0,
-    })
-    setShowForm(true)
-    onCatalogItemHandled()
-  }, [pendingAddFromCatalog, onCatalogItemHandled])
 
   function selectList(id, name) {
     setListId(id); setListName(name)
@@ -464,11 +450,16 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
 
       {/* List */}
       <div className="flex-1 overflow-y-auto pb-28">
+        {/* Lista vazia: o botão de adicionar fica no meio da tela */}
         {entries.length === 0 && (
-          <div className="text-center mt-20 px-8">
+          <div className="min-h-[55svh] flex flex-col items-center justify-center text-center px-8">
             <IconBadge><IconCart size={24} /></IconBadge>
-            <p className="text-white text-sm font-medium mt-4">Lista vazia</p>
-            <p className="text-gray-500 text-xs mt-1">Adicione o que precisa comprar. Quem está na família vê na hora.</p>
+            <p className="text-white text-base font-medium mt-4">Lista vazia</p>
+            <p className="text-gray-500 text-sm mt-1 mb-6">Adicione o que precisa comprar. Quem está na família vê na hora.</p>
+            <button onClick={() => { setEditItem(null); setPrefillItem(null); setShowForm(true) }}
+              className="btn-brand font-semibold px-8 min-h-12 rounded-2xl flex items-center justify-center gap-2 shadow-xl">
+              <IconPlus /> Adicionar item
+            </button>
           </div>
         )}
 
@@ -519,9 +510,10 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
       </div>
 
       {/* Ações principais: adicionar e, quando há itens no carrinho, finalizar */}
+      {entries.length > 0 && (
       <div className="fixed bottom-16 left-0 right-0 max-w-lg mx-auto px-4 pb-2 flex gap-2">
         <button onClick={() => { setEditItem(null); setPrefillItem(null); setShowForm(true) }}
-          className={`${checked.length > 0 ? 'flex-1' : 'w-full'} bg-gray-800 border border-gray-700 text-gray-200 font-medium py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-xl text-sm active:bg-gray-700`}>
+          className={`${checked.length > 0 ? 'flex-1' : 'w-full'} btn-brand font-semibold py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-xl text-sm`}>
           <IconPlus /> {checked.length > 0 ? 'Item' : 'Adicionar item'}
         </button>
         {checked.length > 0 && (
@@ -531,6 +523,7 @@ export default function ActiveList({ pendingAddFromCatalog, onCatalogItemHandled
           </button>
         )}
       </div>
+      )}
 
       {overlays}
 
@@ -562,6 +555,7 @@ function cheaperHint(entry, catalogItem) {
 
 function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked, priceDiff, cheaper }) {
   return (
+    <SwipeRow onSwipeRight={onCheck} onSwipeLeft={onDelete} checked={!!isChecked}>
     <div className={`flex items-center gap-1 px-4 py-1 ${!isLast ? 'border-b border-gray-800/60' : ''}`}>
       {/* Área de toque de 44px; o círculo visível continua pequeno */}
       <button onClick={onCheck} aria-label={isChecked ? `Desmarcar ${entry.name}` : `Marcar ${entry.name} como pego`} aria-pressed={!!isChecked}
@@ -574,7 +568,7 @@ function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked
 
       <div className="flex-1 min-w-0 cursor-pointer py-1.5" onClick={onEdit}>
         <span className={`text-sm ${isChecked ? 'line-through text-gray-600' : 'text-white'}`}>{entry.name}</span>
-        {entry.brand && <span className="text-[10px] text-gray-300 bg-gray-800 border border-gray-700 px-1.5 py-0.5 rounded ml-2 align-middle">{entry.brand}</span>}
+        {entry.brand && <span className="text-xs text-gray-300 bg-gray-800 border border-gray-700 px-1.5 py-0.5 rounded ml-2 align-middle">{entry.brand}</span>}
         {entry.obs && <span className="text-gray-600 text-xs ml-2">{entry.obs}</span>}
         <div className="text-gray-600 text-xs mt-0.5">
           {entry.qty} {entry.unit}
@@ -586,7 +580,7 @@ function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked
           )}
         </div>
         {cheaper && (
-          <div className="text-[11px] text-emerald-400/80 mt-0.5 truncate">
+          <div className="text-xs text-emerald-400/80 mt-0.5 truncate">
             {Number(cheaper.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} no {cheaper.mercado}
           </div>
         )}
@@ -603,6 +597,7 @@ function EntryRow({ entry, onCheck, onEdit, onDelete, isLast, checked: isChecked
         </button>
       </div>
     </div>
+    </SwipeRow>
   )
 }
 

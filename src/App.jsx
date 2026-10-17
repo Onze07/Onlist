@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from './context/AuthContext'
 import { useFamily } from './context/FamilyContext'
 import Login from './pages/Login'
@@ -34,8 +34,6 @@ export default function App() {
   const { familyId, family, loading, userDoc, updateUserDoc, notice, setNotice } = useFamily()
   const hash = useHash()
   const [tab, setTab] = useState('list')
-  const [pendingCatalogItem, setPendingCatalogItem] = useState(null)
-  const clearPendingCatalogItem = useCallback(() => setPendingCatalogItem(null), [])
   const [invite, setInvite] = useState(() => getPendingInvite())
 
   // Avisos da família (troca de família, posse etc.) viram toast
@@ -69,21 +67,13 @@ export default function App() {
   if (!familyId) return <FamilySetup />
   if (!userDoc?.onboardedAt) return <Welcome />
 
-  function handleAddToList(item) {
-    setPendingCatalogItem(item)
-    setTab('list')
-  }
-
   return (
     <div className="relative">
       <div className="status-bar-bg" aria-hidden="true" />
       <div style={{ display: tab === 'list' ? 'block' : 'none' }}>
-        <ActiveList
-          pendingAddFromCatalog={pendingCatalogItem}
-          onCatalogItemHandled={clearPendingCatalogItem}
-        />
+        <ActiveList />
       </div>
-      {tab === 'catalog' && <Catalog onAddToList={handleAddToList} />}
+      {tab === 'catalog' && <Catalog />}
       {tab === 'history' && <History />}
       {tab === 'reports' && <Reports />}
       {tab === 'account' && <Account />}

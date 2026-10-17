@@ -7,9 +7,11 @@ import { AuthProvider } from './context/AuthContext'
 import { FamilyProvider } from './context/FamilyContext'
 import { registerSW } from 'virtual:pwa-register'
 import './lib/install'
+import { applyTheme } from './lib/theme'
 import { captureInviteFromUrl } from './lib/invite'
 import { installErrorReporter } from './lib/errorReporter'
 
+applyTheme()
 captureInviteFromUrl()
 installErrorReporter()
 

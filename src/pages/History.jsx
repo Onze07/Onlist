@@ -226,7 +226,7 @@ export default function History() {
                     <div className="flex-1 min-w-0">
                       <div className="text-white text-sm font-medium flex items-center gap-1.5">
                         {record.mercado}
-                        {record.source === 'nfce' && <span className="text-[10px] text-green-300 bg-green-500/10 px-1.5 py-0.5 rounded flex-shrink-0">nota</span>}
+                        {record.source === 'nfce' && <span className="text-xs text-green-300 bg-green-500/10 px-1.5 py-0.5 rounded flex-shrink-0">nota</span>}
                       </div>
                       <div className="text-gray-500 text-xs">{record.listName || 'Lista'} · {itemsLabel((record.items?.length || 0) + (record.otherItems?.length || 0))}</div>
                     </div>
