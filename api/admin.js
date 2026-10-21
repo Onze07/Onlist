@@ -5,7 +5,7 @@ import { getAuth } from 'firebase-admin/auth'
 import { logError } from './_lib/errlog.js'
 import { getFirestore } from 'firebase-admin/firestore'
 import { getMessaging } from 'firebase-admin/messaging'
-import { AdminError, isAdminEmail, isRecentLogin, overview, familyDetail, setPlan, listFeedback, setFeedbackStatus, audit, listAudit } from './_lib/admin-core.js'
+import { AdminError, isAdminEmail, isRecentLogin, overview, familyDetail, setPlan, listFeedback, setFeedbackStatus, audit, listAudit, getAnnouncement, setAnnouncement } from './_lib/admin-core.js'
 import { notifyResolved } from './_lib/support-core.js'
 import { listErrors, clearErrorGroup } from './_lib/errlog.js'
 
@@ -50,6 +50,12 @@ export default async function handler(req, res) {
         return res.status(200).json(r)
       }
       case 'audit': return res.status(200).json({ audit: await listAudit({ fs }) })
+      case 'announcement': return res.status(200).json(await getAnnouncement({ fs }))
+      case 'setAnnouncement': {
+        const r = await setAnnouncement({ fs, message: body.message, level: body.level, active: body.active, adminEmail: token.email })
+        await audit(fs, { email: token.email, action: r.active ? 'Aviso geral publicado' : 'Aviso geral desligado', target: 'config/announcement', details: r.active ? { mensagem: r.message } : null })
+        return res.status(200).json(r)
+      }
       case 'feedback': return res.status(200).json({ feedback: await listFeedback({ fs }) })
       case 'errors': return res.status(200).json(await listErrors(fs, { days: Number(body.days) || 7 }))
       case 'clearErrors': {

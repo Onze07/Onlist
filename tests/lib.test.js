@@ -265,3 +265,12 @@ test('ordem de exibição: categorias por quantidade ou A–Z', async () => {
   assert.equal(alpha[0].cat, null)
   assert.deepEqual(alpha[0].items.map(i => i.name), ['arroz', 'Banana', 'Feijão', 'Sabão'])
 })
+
+test('App Check no servidor: sem exigir aceita; exigindo recusa sem token ou token inválido', async () => {
+  const { appCheckOk } = await import('../api/_lib/appcheck.js')
+  const req = h => ({ headers: h })
+  assert.equal(await appCheckOk(req({}), false), true)
+  assert.equal(await appCheckOk(req({}), true), false)
+  assert.equal(await appCheckOk(req({ 'x-firebase-appcheck': 'falso' }), true), false)
+  assert.equal(await appCheckOk(req({ 'x-firebase-appcheck': 'falso' }), false), true)
+})

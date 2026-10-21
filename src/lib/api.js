@@ -1,4 +1,4 @@
-import { auth } from '../firebase'
+import { auth, appCheckHeader } from '../firebase'
 import { reportError } from './errorReporter'
 
 // POST nas funções da Vercel (/api/*) com o login do usuário
@@ -10,7 +10,7 @@ export async function apiPost(path, payload, { freshToken = false } = {}) {
   try {
     res = await fetch(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}`, ...(await appCheckHeader()) },
       body: JSON.stringify(payload),
     })
   } catch (e) {

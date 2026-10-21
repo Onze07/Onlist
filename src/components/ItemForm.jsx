@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { collection, getDocs, orderBy, query } from 'firebase/firestore'
-import { db } from '../firebase'
+import { loadCatalog } from '../lib/catalogCache'
 import { useFamily } from '../context/FamilyContext'
 import { parsePrice } from '../lib/firestore'
 import { roundTo } from '../lib/money'
@@ -38,9 +37,9 @@ export default function ItemForm({ onSave, onCancel, onDelete, initial, defaultI
 
   useEffect(() => {
     if (!familyId) return
-    getDocs(query(collection(db, 'families', familyId, 'catalog'), orderBy('name'))).then(snap => {
-      setCatalog(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-    })
+    loadCatalog(familyId).then(map => {
+      setCatalog(Object.entries(map).map(([id, d]) => ({ id, ...d })).sort((a, b) => String(a.name).localeCompare(String(b.name))))
+    }).catch(() => {})
   }, [familyId])
 
   function set(field, value) {

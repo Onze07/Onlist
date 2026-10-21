@@ -7,6 +7,7 @@ import { logError } from './_lib/errlog.js'
 import { getFirestore } from 'firebase-admin/firestore'
 import { SupportError, createFeedback, sendEmail, supportEmail } from './_lib/support-core.js'
 import { RateLimitError, hit } from './_lib/ratelimit.js'
+import { APPCHECK_ERROR, appCheckOk } from './_lib/appcheck.js'
 
 function app() {
   if (getApps().length) return getApps()[0]
@@ -26,6 +27,9 @@ export default async function handler(req, res) {
     } catch {
       return res.status(401).json({ error: 'Faça login novamente' })
     }
+
+    // Chamada de fora do app (sem App Check válido) é recusada quando APPCHECK_ENFORCE=1
+    if (!(await appCheckOk(req))) return res.status(401).json({ error: APPCHECK_ERROR })
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {}
     await hit(getFirestore(), `feedback_${token.uid}`, { limit: 5, windowSec: 3600, message: 'Você já enviou várias mensagens agora há pouco.' })

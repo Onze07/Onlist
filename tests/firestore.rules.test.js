@@ -252,6 +252,12 @@ test('usuário apaga o próprio perfil de usuário', async () => {
   await assertSucceeds(deleteDoc(doc(as('bob'), 'users/bob')))
 })
 
+test('config: aviso geral é lido por quem está logado e ninguém grava pelo app', async () => {
+  await assertSucceeds(getDoc(doc(as('bob'), 'config/announcement')))
+  await assertFails(setDoc(doc(as('bob'), 'config/announcement'), { active: true, message: 'oi' }))
+  await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), 'config/announcement')))
+})
+
 test('moves: troca de família pendente só pelo servidor', async () => {
   await assertFails(setDoc(doc(as('bob'), 'moves/bob'), { from: 'outra', owner: true, mode: 'merge' }))
   await assertFails(getDoc(doc(as('bob'), 'moves/bob')))

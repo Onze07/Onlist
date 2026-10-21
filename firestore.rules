@@ -45,6 +45,12 @@ service cloud.firestore {
       allow update: if false;
     }
 
+    // Aviso geral do app (config/announcement): todos logados leem; só o painel grava, pelo servidor
+    match /config/{doc} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
     // Troca de família em andamento: só o servidor (/api/family) lê e grava
     match /moves/{uid} {
       allow read, write: if false;

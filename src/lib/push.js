@@ -1,5 +1,5 @@
 import { arrayRemove, arrayUnion, doc, serverTimestamp, setDoc } from 'firebase/firestore'
-import { auth, db } from '../firebase'
+import { auth, db, appCheckHeader } from '../firebase'
 import { isIOS, isStandalone } from './install'
 
 const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY
@@ -62,7 +62,7 @@ export async function sendNotify(payload) {
   if (!idToken) throw new Error('Faça login novamente')
   const res = await fetch('/api/notify', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}`, ...(await appCheckHeader()) },
     body: JSON.stringify(payload),
   })
   const data = await res.json().catch(() => ({}))

@@ -6,6 +6,7 @@ import { logError } from './_lib/errlog.js'
 import { getFirestore, FieldValue } from 'firebase-admin/firestore'
 import { getMessaging } from 'firebase-admin/messaging'
 import { planNotification, cooldownFor } from './_lib/notify-core.js'
+import { APPCHECK_ERROR, appCheckOk } from './_lib/appcheck.js'
 
 function app() {
   if (getApps().length) return getApps()[0]
@@ -39,6 +40,9 @@ export default async function handler(req, res) {
         return { exists: snap.exists, data: snap.data() || {} }
       },
     }
+
+    // Chamada de fora do app (sem App Check válido) é recusada quando APPCHECK_ENFORCE=1
+    if (!(await appCheckOk(req))) return res.status(401).json({ error: APPCHECK_ERROR })
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body
     const plan = await planNotification({ db, uid, body })

@@ -18,6 +18,7 @@ import SwitchFamilySheet from './components/SwitchFamilySheet'
 import SupportReply from './components/SupportReply'
 import { clearPendingInvite, getPendingInvite } from './lib/invite'
 import { toast } from './lib/feedback'
+import AnnouncementBanner from './components/AnnouncementBanner'
 
 function useHash() {
   const [hash, setHash] = useState(window.location.hash)
@@ -70,6 +71,7 @@ export default function App() {
   return (
     <div className="relative">
       <div className="status-bar-bg" aria-hidden="true" />
+      <AnnouncementBanner />
       <div style={{ display: tab === 'list' ? 'block' : 'none' }}>
         <ActiveList />
       </div>

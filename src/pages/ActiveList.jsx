@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   collection, onSnapshot, addDoc, updateDoc, deleteDoc,
   doc, setDoc, serverTimestamp, getDocs, query, orderBy, deleteField
@@ -25,6 +25,8 @@ import PriceCalculator from '../components/PriceCalculator'
 import SwipeRow from '../components/SwipeRow'
 import { dropOrder, sortEntries } from '../lib/reorder'
 import { useListDrag } from '../lib/useListDrag'
+import { useCatalogFor } from '../lib/useCatalogFor'
+import { invalidateCatalog } from '../lib/catalogCache'
 import { useTips } from '../lib/tips'
 import TipBanner from '../components/TipBanner'
 import ActionChip from '../components/ActionChip'
@@ -44,7 +46,6 @@ export default function ActiveList() {
   const [listId, setListId] = useState(null)
   const [listName, setListName] = useState('')
   const [entries, setEntries] = useState([])
-  const [catalog, setCatalog] = useState({})
   const [showForm, setShowForm] = useState(false)
   const [editItem, setEditItem] = useState(null)
   const [prefillItem, setPrefillItem] = useState(null)
@@ -109,15 +110,9 @@ export default function ActiveList() {
     })
   }, [familyId, listId])
 
-  // Load catalog for price signals
-  useEffect(() => {
-    if (!familyId) return
-    return onSnapshot(collection(db, 'families', familyId, 'catalog'), snap => {
-      const map = {}
-      snap.docs.forEach(d => { map[d.id] = d.data() })
-      setCatalog(map)
-    })
-  }, [familyId])
+  // Catálogo só dos produtos que estão na lista (antes lia o catálogo inteiro a cada abertura)
+  const entryNames = useMemo(() => entries.map(e => e.name), [entries])
+  const catalog = useCatalogFor(familyId, entryNames)
 
   // Load mercado options
   useEffect(() => {
@@ -314,6 +309,7 @@ export default function ActiveList() {
         name: data.name, category: data.category, unit: data.unit,
         lastPrice: data.pricePerUnit,
       }, { merge: true }), 'atualizar catálogo')
+      invalidateCatalog(familyId)
     }
     setShowForm(false); setEditItem(null); setPrefillItem(null)
   }
@@ -372,6 +368,7 @@ export default function ActiveList() {
     }
     // Enfileira tudo de uma vez: offline a compra fica salva e sobe quando a conexão voltar
     queueWrite(commitInChunks(ops), 'registrar compra')
+    invalidateCatalog(familyId)
     setFinishing(false); setMercado(''); setSaving(false)
     toast(`Compra registrada: ${fmt(totalChecked)}${navigator.onLine ? '' : ' (sobe quando a internet voltar)'}.`, { tone: 'ok' })
     clearShopping()
@@ -448,7 +445,6 @@ export default function ActiveList() {
         <NfceReader
           familyId={familyId}
           user={user}
-          catalog={catalog}
           entries={entries.map(e => ({ ...e, listId }))}
           listName={listName}
           mercadoOptions={mercadoOptions}
