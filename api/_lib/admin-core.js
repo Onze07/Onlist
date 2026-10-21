@@ -281,3 +281,28 @@ export async function listAudit({ fs, limit = 100 }) {
     return { id: d.id, at: iso(a.at), email: a.email, action: a.action, target: a.target, details: a.details }
   })
 }
+
+// ---------- Aviso geral (aparece no topo do app para todo mundo) ----------
+// config/announcement: o app só lê (regras); só o painel grava, pelo servidor.
+const LEVELS = ['info', 'warn']
+
+export async function getAnnouncement({ fs }) {
+  const snap = await fs.doc('config/announcement').get()
+  return snap.exists ? snap.data() : { active: false, message: '', level: 'info' }
+}
+
+export async function setAnnouncement({ fs, message, level, active, adminEmail, now = Date.now() }) {
+  const text = String(message || '').trim().slice(0, 200)
+  if (active && !text) throw new AdminError(400, 'Escreva a mensagem do aviso')
+  const data = {
+    active: !!active,
+    message: text,
+    level: LEVELS.includes(level) ? level : 'info',
+    // id novo a cada publicação: quem fechou o aviso anterior vê o novo
+    id: String(now),
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: adminEmail || null,
+  }
+  await fs.doc('config/announcement').set(data)
+  return { ...data, updatedAt: new Date(now).toISOString() }
+}

@@ -13,6 +13,7 @@ import { useListDrag } from '../lib/useListDrag'
 import SwipeRow from '../components/SwipeRow'
 import TipBanner from '../components/TipBanner'
 import { useTips } from '../lib/tips'
+import { invalidateCatalog } from '../lib/catalogCache'
 import { ask, toast } from '../lib/feedback'
 import { deletePriceEntry } from '../lib/purchasePrices'
 
@@ -107,6 +108,7 @@ export default function Catalog() {
 
   function saveEdit(id, data) {
     queueWrite(updateDoc(doc(db, 'families', familyId, 'catalog', id), data), 'salvar o produto')
+    invalidateCatalog(familyId)
     setEditingId(null)
   }
 
@@ -126,6 +128,7 @@ export default function Catalog() {
     const { id, ...data } = item
     const ref = doc(db, 'families', familyId, 'catalog', id)
     queueWrite(deleteDoc(ref), 'remover o produto')
+    invalidateCatalog(familyId)
     const tip = viaButton ? tips.take('tip-catalog-swipe', 'Dica: deslize ← para excluir e → para pôr na lista.') : ''
     if (!viaButton) tips.mark('tip-catalog-swipe')
     toast(`"${item.name}" removido do catálogo.${tip ? ` ${tip}` : ''}`, {

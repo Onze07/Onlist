@@ -9,6 +9,7 @@ import { logError } from './_lib/errlog.js'
 import { getFirestore } from 'firebase-admin/firestore'
 import { FamilyError, joinWithCode, resumeMove, deleteAccount } from './_lib/family-core.js'
 import { RateLimitError, hit } from './_lib/ratelimit.js'
+import { APPCHECK_ERROR, appCheckOk } from './_lib/appcheck.js'
 
 export const config = { maxDuration: 60 }
 
@@ -30,6 +31,9 @@ export default async function handler(req, res) {
     } catch {
       return res.status(401).json({ error: 'Faça login novamente' })
     }
+
+    // Chamada de fora do app (sem App Check válido) é recusada quando APPCHECK_ENFORCE=1
+    if (!(await appCheckOk(req))) return res.status(401).json({ error: APPCHECK_ERROR })
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {}
     const fs = getFirestore()

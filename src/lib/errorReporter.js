@@ -1,6 +1,6 @@
 // Envia ao painel (/admin → Erros) as falhas que o usuário não vê: erro de tela,
 // promessa sem tratamento, gravação que não subiu. Limitado para não virar spam.
-import { auth } from '../firebase'
+import { auth, appCheckHeader } from '../firebase'
 
 const MAX_PER_SESSION = 15
 const seen = new Set()
@@ -17,7 +17,7 @@ async function flush() {
     if (!idToken) return
     await fetch('/api/log', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}`, ...(await appCheckHeader()) },
       body: JSON.stringify({ errors: batch }),
       keepalive: true,
     })

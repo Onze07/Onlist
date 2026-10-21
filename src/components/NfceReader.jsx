@@ -9,6 +9,7 @@ import { CATEGORIES, suggestCategory } from '../lib/categories'
 import { addPendingNote, isContingencyKey, keyFromUrl, listPendingNotes, removePendingNote } from '../lib/pendingNotes'
 import { parseAccessKey } from '../../api/_lib/nfce-parse.js'
 import { ask, showError } from '../lib/feedback'
+import { loadCatalog, invalidateCatalog } from '../lib/catalogCache'
 import { pricesOfPurchase } from '../lib/prices'
 import { IconBadge, IconReceipt } from './Icon'
 
@@ -70,8 +71,8 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
 
   useEffect(() => {
     if (catalogProp || !familyId) return
-    getDocs(collection(db, 'families', familyId, 'catalog'))
-      .then(snap => setLoadedCatalog(Object.fromEntries(snap.docs.map(d => [d.id, d.data()]))))
+    loadCatalog(familyId)
+      .then(setLoadedCatalog)
       .catch(() => setLoadedCatalog({}))
     getDocs(collection(db, 'families', familyId, 'mercados'))
       .then(snap => setLoadedMarkets(snap.docs.map(d => d.data().name)))
@@ -254,6 +255,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
       const removed = original ? [] : entries.filter(e => bought.has(String(e.name).toLowerCase()))
       removed.forEach(e => ops.push(b => b.delete(doc(db, 'families', familyId, 'lists', e.listId, 'entries', e.id))))
       queueWrite(commitInChunks(ops), 'registrar a nota')
+      invalidateCatalog(familyId)
       const leftChecked = original ? 0 : entries.filter(e => e.checked && !bought.has(String(e.name).toLowerCase())).length
       onSaved?.({ removed: removed.length, leftChecked, reconciled: !!original })
     } catch (e) {

@@ -5,6 +5,7 @@ import { getAuth } from 'firebase-admin/auth'
 import { getFirestore } from 'firebase-admin/firestore'
 import { logError } from './_lib/errlog.js'
 import { hit } from './_lib/ratelimit.js'
+import { appCheckOk } from './_lib/appcheck.js'
 
 function app() {
   if (getApps().length) return getApps()[0]
@@ -19,6 +20,9 @@ export default async function handler(req, res) {
     const idToken = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '')
     let token
     try { token = await getAuth().verifyIdToken(idToken) } catch { return res.status(401).json({ error: 'Faça login novamente' }) }
+
+    // Chamada de fora do app (sem App Check válido) é recusada quando APPCHECK_ENFORCE=1
+    if (!(await appCheckOk(req))) return res.status(204).end()
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {}
     const items = (Array.isArray(body.errors) ? body.errors : [body]).slice(0, 20)

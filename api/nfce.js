@@ -9,6 +9,7 @@ import { getFirestore } from 'firebase-admin/firestore'
 import { logError, sanitize } from './_lib/errlog.js'
 import { RateLimitError, hit } from './_lib/ratelimit.js'
 import { parseNfce, isCaptchaPage, extractCaptcha, validNfceUrl, keyInfo, classifyPage, notFoundMessage, parseAccessKey, keyConsultUrls } from './_lib/nfce-parse.js'
+import { APPCHECK_ERROR, appCheckOk } from './_lib/appcheck.js'
 
 const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
 
@@ -168,6 +169,9 @@ export default async function handler(req, res) {
     ctx = { fs: getFirestore(), uid: token.uid, email: token.email }
     // Protege o servidor de ser bloqueado pela SEFAZ por excesso de consultas
     await hit(ctx.fs, `nfce_${token.uid}`, { limit: 60, windowSec: 3600, message: 'Muitas consultas de nota seguidas.' })
+
+    // Chamada de fora do app (sem App Check válido) é recusada quando APPCHECK_ENFORCE=1
+    if (!(await appCheckOk(req))) return res.status(401).json({ error: APPCHECK_ERROR })
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {})
 

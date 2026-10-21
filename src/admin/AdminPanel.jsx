@@ -55,6 +55,57 @@ function Tile({ label, value, hint }) {
 }
 
 // Funil de uma série só: barras horizontais com rótulo direto
+// Aviso geral: aparece no topo do app para todos (instabilidade, manutenção, novidade)
+function AnnouncementEditor() {
+  const [current, setCurrent] = useState(null)
+  const [message, setMessage] = useState('')
+  const [level, setLevel] = useState('warn')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    adminApi('announcement').then(a => { setCurrent(a); setMessage(a.message || ''); setLevel(a.level || 'warn') }).catch(e => setError(e.message))
+  }, [])
+
+  async function save(active) {
+    setBusy(true); setError('')
+    try { setCurrent(await adminApi('setAnnouncement', { message, level, active })) } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div>
+          <h2 className="text-white font-medium">Aviso geral no app</h2>
+          <p className="text-gray-500 text-xs">Aparece no topo para todos. Use em instabilidade ou manutenção.</p>
+        </div>
+        <span className={`text-xs px-2 py-1 rounded-full ${current?.active ? 'bg-amber-500/15 text-amber-300' : 'bg-gray-800 text-gray-400'}`}>
+          {current?.active ? 'No ar' : 'Desligado'}
+        </span>
+      </div>
+      <textarea value={message} onChange={e => setMessage(e.target.value)} maxLength={200} rows={2}
+        placeholder="Ex.: A leitura de notas está instável. Já estamos resolvendo."
+        className="w-full bg-gray-800 text-white text-sm rounded-xl px-3 py-2 outline-none border border-gray-700 focus:border-gray-600" />
+      <div className="flex flex-wrap items-center gap-2 mt-3">
+        <select value={level} onChange={e => setLevel(e.target.value)} aria-label="Tipo do aviso"
+          className="bg-gray-800 text-gray-200 text-sm rounded-lg px-2 py-1.5 border border-gray-700">
+          <option value="warn">Alerta (amarelo)</option>
+          <option value="info">Informação</option>
+        </select>
+        <span className="text-gray-600 text-xs">{message.length}/200</span>
+        <span className="flex-1" />
+        {current?.active && (
+          <button onClick={() => save(false)} disabled={busy} className="text-gray-300 text-sm border border-gray-700 px-3 py-1.5 rounded-lg disabled:opacity-50">Desligar</button>
+        )}
+        <button onClick={() => save(true)} disabled={busy || !message.trim()} className="bg-green-600 text-white text-sm font-medium px-3 py-1.5 rounded-lg disabled:opacity-50">
+          {current?.active ? 'Atualizar aviso' : 'Publicar aviso'}
+        </button>
+      </div>
+      {error && <p className="text-red-300 text-xs mt-2">{error}</p>}
+    </div>
+  )
+}
+
 function Funnel({ steps }) {
   const max = Math.max(1, ...steps.map(s => s.value))
   return (
@@ -557,6 +608,7 @@ export default function AdminPanel({ user, onSignOut }) {
 
         {data && tab === 'overview' && (
           <div className="flex flex-col gap-6">
+            <AnnouncementEditor />
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <Tile label="Usuários" value={k.users} hint={`${k.usersNoFamily} sem família`} />
               <Tile label="Famílias" value={k.families} hint={`${k.familiesWithPurchase} já fizeram compra`} />
