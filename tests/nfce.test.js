@@ -213,3 +213,13 @@ test('sessão do captcha: assinada, presa ao usuário e com validade', async () 
   assert.equal(openSession(payload, 'ana', t0, key), null)               // sem assinatura
   assert.equal(openSession(undefined, 'ana', t0, key), null)
 })
+
+test('falha de rede com a SEFAZ vira "fora do ar" (guardar para depois)', async () => {
+  const { isNetworkError } = await import('../api/nfce.js')
+  const connect = Object.assign(new TypeError('fetch failed'), { cause: { code: 'UND_ERR_CONNECT_TIMEOUT' } })
+  assert.equal(isNetworkError(connect), true)
+  assert.equal(isNetworkError(Object.assign(new Error('x'), { name: 'TimeoutError' })), true)
+  assert.equal(isNetworkError(Object.assign(new Error('x'), { code: 'ECONNREFUSED' })), true)
+  assert.equal(isNetworkError(new Error('Endereço fora do portal da SEFAZ')), false)
+  assert.equal(isNetworkError(null), false)
+})
