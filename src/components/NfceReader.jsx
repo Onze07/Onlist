@@ -278,7 +278,7 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
         {error && !retry && <p className="text-red-300 text-sm bg-red-500/10 rounded-xl px-3 py-2 mb-3">{error}</p>}
         {error && retry && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-3 mb-3">
-            <p className="text-amber-200 text-sm font-medium mb-1">{retry.reason === 'blocked' ? 'SEFAZ pausou as consultas' : retry.contingency ? 'Nota em contingência' : 'Nota ainda não disponível'}</p>
+            <p className="text-amber-200 text-sm font-medium mb-1">{retry.reason === 'offline' ? 'Portal da SEFAZ fora do ar' : retry.reason === 'blocked' ? 'SEFAZ pausou as consultas' : retry.contingency ? 'Nota em contingência' : 'Nota ainda não disponível'}</p>
             <p className="text-amber-100/80 text-sm">{error}</p>
             <div className="flex gap-2 mt-3">
               <button onClick={() => { addPendingNote(familyId, { url: retry.url, key: retry.key, contingency: retry.contingency }); setRetry(null); setError('') }}

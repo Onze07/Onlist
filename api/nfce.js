@@ -41,8 +41,28 @@ export function isGovUrl(raw) {
   } catch { return false }
 }
 
+// Falha de rede ao falar com a SEFAZ (portal fora do ar, lento ou recusando conexão)
+const NET_CODES = new Set(['UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_SOCKET', 'ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'EHOSTUNREACH', 'ENETUNREACH'])
+export function isNetworkError(e) {
+  if (!e) return false
+  if (e.name === 'TimeoutError' || e.name === 'AbortError') return true
+  return NET_CODES.has(e.code) || NET_CODES.has(e.cause?.code) || (e.name === 'TypeError' && /fetch failed/i.test(e.message))
+}
+
 // fetch com cookies e redirecionamentos manuais (a SEFAZ redireciona http -> https e define a sessão)
-async function request(url, { method = 'GET', body, jar = {}, referer } = {}) {
+// Endereço http: tenta direto o https (é para lá que a SEFAZ redireciona); se o https não conectar, usa o http.
+async function request(url, opts = {}) {
+  if (/^http:\/\//i.test(url)) {
+    try {
+      return await requestOnce(url.replace(/^http:/i, 'https:'), { ...opts, jar: { ...(opts.jar || {}) }, timeoutMs: 9000 })
+    } catch (e) {
+      if (!isNetworkError(e)) throw e
+    }
+  }
+  return requestOnce(url, opts)
+}
+
+async function requestOnce(url, { method = 'GET', body, jar = {}, referer, timeoutMs = 20000 } = {}) {
   let current = url
   for (let i = 0; i < 6; i++) {
     if (!isGovUrl(current)) throw new Error('Endereço fora do portal da SEFAZ')
@@ -58,7 +78,7 @@ async function request(url, { method = 'GET', body, jar = {}, referer } = {}) {
         ...(referer ? { Referer: referer } : {}),
         ...(Object.keys(jar).length ? { Cookie: cookieHeader(jar) } : {}),
       },
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     mergeCookies(jar, res)
     if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
@@ -175,6 +195,8 @@ export default async function handler(req, res) {
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {})
 
+    // Guarda a chave para o caso de a SEFAZ estar fora do ar (o app oferece "ler depois")
+    ctx.key = body.key ? parseAccessKey(body.key).key || null : (validNfceUrl(body.url) || {}).key || null
     if (body.action === 'start' && body.key) return await startByKey(res, body.key, ctx)
 
     if (body.action === 'start') {
@@ -229,12 +251,19 @@ export default async function handler(req, res) {
   } catch (e) {
     if (e instanceof RateLimitError) return res.status(429).json({ error: e.message, retryAfter: e.retryAfter })
     console.error('nfce', e)
-    const timeout = e.name === 'TimeoutError' || e.name === 'AbortError'
+    // Portal da SEFAZ fora do ar/lento: não é erro do app; oferece guardar a nota e ler depois
+    const offline = isNetworkError(e)
     await logError(ctx?.fs, {
-      source: 'nfce', kind: timeout ? 'timeout' : 'exception',
-      message: timeout ? 'SEFAZ demorou demais para responder' : `Falha na consulta: ${e.message}`,
+      source: 'nfce', kind: offline ? 'sefaz_offline' : 'exception',
+      message: offline ? `Portal da SEFAZ sem resposta (${e.cause?.code || e.name})` : `Falha na consulta: ${e.message}`,
       detail: e.stack, uid: ctx?.uid, email: ctx?.email, path: '/api/nfce',
     })
-    return res.status(502).json({ error: timeout ? 'O portal da SEFAZ demorou demais. Tente de novo.' : 'Não foi possível consultar a nota agora.' })
+    if (offline) {
+      return res.status(503).json({
+        error: 'O portal da SEFAZ não está respondendo agora. Guarde a nota para ler depois ou tente de novo em alguns minutos.',
+        retryLater: true, reason: 'offline', key: ctx?.key || null,
+      })
+    }
+    return res.status(502).json({ error: 'Não foi possível consultar a nota agora.' })
   }
 }
