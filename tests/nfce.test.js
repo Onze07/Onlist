@@ -280,3 +280,38 @@ test('endereço para abrir a nota no navegador', async () => {
   assert.equal(portalUrlFor('https://evil.com/?p=' + key), null)
   assert.equal(portalUrlFor('123'), null)
 })
+
+test('texto copiado da página inteira: data e chave de acesso com espaços', async () => {
+  const { parseNfceText } = await import('../api/_lib/nfce-parse.js')
+  const n = parseNfceText(`IRMAOS GONCALVES COMERCIO E INDUSTRIA LTDA
+CNPJ: 04.082.624/0037-67
+AV. MARECHAL RONDON C/RUA 21 DE ABRIL, 1993, , APIDIA, PIMENTA BUENO, RO
+
+PAO BISNAGUINHA IG KGR(Código: 00002387)
+Qtde.:0,312  UN: KG  Vl. Unit.: 28,493589 	Vl. Total
+8,89
+MIST JAPONESA DAUCY CONG 300 GR(Código: 11298267)
+Qtde.:2  UN: UNID  Vl. Unit.: 6,21 	Vl. Total
+12,42
+Qtd. total de itens:2
+Valor a pagar R$:21,31
+Forma de pagamento:Valor pago R$:
+Cartão de Crédito21,31
+Informação dos Tributos Totais Incidentes (Lei Federal 12.741/2012) R$
+59,17
+EMISSÃO NORMAL
+
+Número: 364897 Série: 7 Emissão: 21/10/2026 18:27:44 - Via Consumidor
+
+Protocolo de Autorização: 211260233263366 21/10/2026 18:27:47
+
+Ambiente de Produção - Versão XML: 4.00 - Versão XSLT: 2.02
+Consulte pela Chave de Acesso em
+
+Chave de acesso:
+1126 1004 0826 2400 3767 6500 7000 3648 9714 4940 3017`)
+  assert.equal(n.items.length, 2)
+  assert.equal(n.total, 21.31)
+  assert.equal(n.issuedAt, '2026-10-21T18:27:44-04:00')
+  assert.equal(n.key, '11261004082624003767650070003648971449403017')
+})
