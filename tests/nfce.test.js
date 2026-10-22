@@ -223,3 +223,95 @@ test('falha de rede com a SEFAZ vira "fora do ar" (guardar para depois)', async 
   assert.equal(isNetworkError(new Error('Endereço fora do portal da SEFAZ')), false)
   assert.equal(isNetworkError(null), false)
 })
+
+const COPIED_PAGE = `O Programa Nota Legal foi reformulado. Para fazer suas doações e concorrer a prêmios baixe o nosso app.
+SECRETARIA DE ESTADO DE FINANÇAS DE RONDÔNIA
+DOCUMENTO AUXILIAR DA NOTA FISCAL DE CONSUMIDOR ELETRÔNICA
+IRMAOS GONCALVES COMERCIO E INDUSTRIA LTDA
+CNPJ: 04.082.624/0037-67
+AV. MARECHAL RONDON C/RUA 21 DE ABRIL, 1993, , APIDIA, PIMENTA BUENO, RO
+Filtrar itens...
+PAO BISNAGUINHA IG KGR (Código: 00002387)
+Qtde.:0,312\tUN: KG\tVl. Unit.: 28,493589\tVl. Total
+8,89
+BATATA MONALISA KGR (Código: 00006613)
+Qtde.:1,186 UN: KG Vl. Unit.: 5,978077
+Vl. Total
+7,09
+BEB LACT ITALAKINHO CHOCOLAT 200 ML (Código: 00209335)
+Qtde.:1 UN: UNIDVl. Unit.: 1,24 Vl. Total 1,24
+Qtd. total de itens: 3
+Valor total R$: 17,22
+Valor a pagar R$: 17,22
+Número: 123456 Série: 2 Emissão: 21/10/2026 18:30:12 - Via Consumidor
+Chave de acesso:
+1126 1004 0826 2400 3767 6500 2000 1234 5610 0000 0000`
+
+test('texto copiado da página da nota: itens, mercado, total, data e chave', async () => {
+  const { parseNfceText } = await import('../api/_lib/nfce-parse.js')
+  const n = parseNfceText(COPIED_PAGE)
+  assert.equal(n.items.length, 3)
+  assert.deepEqual(n.items[0], { name: 'PAO BISNAGUINHA IG KGR', code: '00002387', qty: 0.312, unit: 'KG', unitPrice: 28.493589, total: 8.89 })
+  assert.equal(n.items[1].name, 'BATATA MONALISA KGR')
+  assert.equal(n.items[1].total, 7.09)
+  assert.equal(n.items[2].unit, 'UNID')
+  assert.equal(n.items[2].qty, 1)
+  assert.equal(n.store, 'IRMAOS GONCALVES COMERCIO E INDUSTRIA LTDA')
+  assert.equal(n.cnpj, '04082624003767')
+  assert.equal(n.total, 17.22)
+  assert.equal(n.issuedAt, '2026-10-21T18:30:12-04:00')
+  assert.equal(n.key, '11261004082624003767650020001234561000000000')
+})
+
+test('texto copiado numa linha só e texto sem nota', async () => {
+  const { parseNfceText } = await import('../api/_lib/nfce-parse.js')
+  const n = parseNfceText(COPIED_PAGE.replace(/\s+/g, ' '))
+  assert.equal(n.items.length, 3)
+  assert.equal(n.items[0].name, 'PAO BISNAGUINHA IG KGR')
+  assert.equal(n.items[2].name, 'BEB LACT ITALAKINHO CHOCOLAT 200 ML')
+  assert.equal(parseNfceText('lista de compras: arroz, feijão').items.length, 0)
+})
+
+test('endereço para abrir a nota no navegador', async () => {
+  const { portalUrlFor } = await import('../api/_lib/nfce-parse.js')
+  const key = '11261004082624003767650020001234561000000000'
+  assert.match(portalUrlFor(key), /^http:\/\/www\.nfce\.sefin\.ro\.gov\.br\/consultanfce\/consulta\.jsp\?p=11261004/)
+  assert.equal(portalUrlFor('http://www.nfce.sefin.ro.gov.br/consultanfce/consulta.jsp?p=' + key + '|2|1|1|ABC'), 'http://www.nfce.sefin.ro.gov.br/consultanfce/consulta.jsp?p=' + key + '|2|1|1|ABC')
+  assert.equal(portalUrlFor('https://evil.com/?p=' + key), null)
+  assert.equal(portalUrlFor('123'), null)
+})
+
+test('texto copiado da página inteira: data e chave de acesso com espaços', async () => {
+  const { parseNfceText } = await import('../api/_lib/nfce-parse.js')
+  const n = parseNfceText(`IRMAOS GONCALVES COMERCIO E INDUSTRIA LTDA
+CNPJ: 04.082.624/0037-67
+AV. MARECHAL RONDON C/RUA 21 DE ABRIL, 1993, , APIDIA, PIMENTA BUENO, RO
+
+PAO BISNAGUINHA IG KGR(Código: 00002387)
+Qtde.:0,312  UN: KG  Vl. Unit.: 28,493589 	Vl. Total
+8,89
+MIST JAPONESA DAUCY CONG 300 GR(Código: 11298267)
+Qtde.:2  UN: UNID  Vl. Unit.: 6,21 	Vl. Total
+12,42
+Qtd. total de itens:2
+Valor a pagar R$:21,31
+Forma de pagamento:Valor pago R$:
+Cartão de Crédito21,31
+Informação dos Tributos Totais Incidentes (Lei Federal 12.741/2012) R$
+59,17
+EMISSÃO NORMAL
+
+Número: 364897 Série: 7 Emissão: 21/10/2026 18:27:44 - Via Consumidor
+
+Protocolo de Autorização: 211260233263366 21/10/2026 18:27:47
+
+Ambiente de Produção - Versão XML: 4.00 - Versão XSLT: 2.02
+Consulte pela Chave de Acesso em
+
+Chave de acesso:
+1126 1004 0826 2400 3767 6500 7000 3648 9714 4940 3017`)
+  assert.equal(n.items.length, 2)
+  assert.equal(n.total, 21.31)
+  assert.equal(n.issuedAt, '2026-10-21T18:27:44-04:00')
+  assert.equal(n.key, '11261004082624003767650070003648971449403017')
+})
