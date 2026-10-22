@@ -7,7 +7,7 @@ import { convertForUnit, findSimilarPurchases, mapUnit, marketName, packSize, su
 import QrScanner from './QrScanner'
 import { CATEGORIES, suggestCategory } from '../lib/categories'
 import { addPendingNote, isContingencyKey, keyFromUrl, listPendingNotes, removePendingNote } from '../lib/pendingNotes'
-import { parseAccessKey } from '../../api/_lib/nfce-parse.js'
+import { parseAccessKey, parseNfceText, portalUrlFor } from '../../api/_lib/nfce-parse.js'
 import { ask, showError } from '../lib/feedback'
 import { loadCatalog, invalidateCatalog } from '../lib/catalogCache'
 import { pricesOfPurchase } from '../lib/prices'
@@ -39,6 +39,9 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
   const mercadoOptions = marketsProp || loadedMarkets
   const [step, setStep] = useState('scan')
   const [link, setLink] = useState('')
+  // Plano B: texto da página da nota copiado do navegador (quando o servidor não alcança a SEFAZ)
+  const [pasteText, setPasteText] = useState('')
+  const [pasteFor, setPasteFor] = useState('') // link do QR ou chave da nota que falhou
   const [error, setError] = useState('')
   const [captcha, setCaptcha] = useState(null)
   const [session, setSession] = useState(null)
@@ -140,6 +143,32 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
     const snap = await getDocs(query(historyCol, where('createdAt', '>=', Timestamp.fromDate(from)), where('createdAt', '<', Timestamp.fromDate(to)))).catch(() => null)
     const records = snap ? snap.docs.map(d => ({ id: d.id, ...d.data() })) : []
     return { similar: findSimilarPurchases(n, records) }
+  }
+
+  function openPaste(forInput = '') {
+    setPasteFor(forInput || lastUrl || link || '')
+    setPasteText('')
+    setError(''); setRetry(null)
+    setStep('paste')
+  }
+
+  async function pasteFromClipboard() {
+    try {
+      const t = await navigator.clipboard.readText()
+      if (t) setPasteText(t)
+    } catch {
+      setError('Não foi possível colar sozinho. Toque e segure no campo e escolha "Colar".')
+    }
+  }
+
+  function readPasted() {
+    const n = parseNfceText(pasteText)
+    if (!n.items.length) {
+      setError('Não encontrei os itens nesse texto. Na página da nota, use "Selecionar tudo" antes de copiar, para vir a página inteira.')
+      return
+    }
+    setError('')
+    showReview({ ...n, key: n.key || keyFromUrl(pasteFor) })
   }
 
   async function showReview(n) {
@@ -286,6 +315,59 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
               <button onClick={() => start(retry.url)}
                 className="px-4 bg-gray-800 border border-gray-700 text-gray-200 text-sm py-2.5 rounded-lg">Tentar agora</button>
             </div>
+            <button onClick={() => openPaste(retry.url)}
+              className="w-full mt-2 min-h-11 text-amber-100 text-sm font-medium border border-amber-500/40 rounded-lg active:bg-amber-500/10">
+              Ler pelo site da SEFAZ (copiar e colar)
+            </button>
+          </div>
+        )}
+        {error && !retry && step === 'scan' && (
+          <button onClick={() => openPaste()} className="w-full -mt-1 mb-3 min-h-11 text-green-300 text-sm font-medium border border-green-500/40 rounded-xl active:bg-green-500/10">
+            Ler pelo site da SEFAZ (copiar e colar)
+          </button>
+        )}
+
+        {step === 'paste' && (
+          <div className="flex flex-col gap-3">
+            <h3 className="text-white text-base font-semibold">Ler pelo site da SEFAZ</h3>
+            <p className="text-gray-400 text-sm">Quando a leitura automática não funciona, você abre a nota no navegador e cola o texto aqui. O Onlist lê os itens no próprio celular.</p>
+            <ol className="flex flex-col gap-3 text-sm text-gray-300">
+              <li className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-gray-800 text-gray-300 text-xs flex items-center justify-center flex-shrink-0">1</span>
+                <div className="flex-1">
+                  <p>Abra a nota no site da SEFAZ e resolva o captcha.</p>
+                  {portalUrlFor(pasteFor) ? (
+                    <a href={portalUrlFor(pasteFor)} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center mt-2 min-h-10 px-3 rounded-lg border border-green-500/40 bg-green-500/10 text-green-300 font-medium">
+                      Abrir a nota no site da SEFAZ ↗
+                    </a>
+                  ) : null}
+                  {portalUrlFor(pasteFor) ? (
+                    <p className="text-gray-500 text-xs mt-1.5">Ou, no app Nota Legal, toque em "Visualizar NFC-e".</p>
+                  ) : (
+                    <p className="text-gray-500 text-xs mt-1">Leia o QR code com a câmera do celular, ou no app Nota Legal toque em "Visualizar NFC-e".</p>
+                  )}
+                </div>
+              </li>
+              <li className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-gray-800 text-gray-300 text-xs flex items-center justify-center flex-shrink-0">2</span>
+                <p className="flex-1">Na página da nota, toque e segure no texto, escolha <b className="text-white">Selecionar tudo</b> e depois <b className="text-white">Copiar</b>.</p>
+              </li>
+              <li className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-gray-800 text-gray-300 text-xs flex items-center justify-center flex-shrink-0">3</span>
+                <p className="flex-1">Volte aqui e cole.</p>
+              </li>
+            </ol>
+            <label htmlFor="nfce-paste" className="sr-only">Texto da nota</label>
+            <textarea id="nfce-paste" value={pasteText} onChange={e => setPasteText(e.target.value)} rows={5}
+              placeholder="Cole aqui o texto da página da nota"
+              className="w-full bg-gray-800 text-white text-sm rounded-xl px-3 py-2.5 outline-none border border-gray-700 focus:border-green-500" />
+            {error && <p className="text-red-300 text-sm">{error}</p>}
+            <div className="flex gap-2">
+              <button onClick={pasteFromClipboard} className="px-4 min-h-12 bg-gray-800 border border-gray-700 text-gray-200 text-sm font-medium rounded-xl">Colar</button>
+              <button onClick={readPasted} disabled={!pasteText.trim()} className="flex-1 min-h-12 bg-green-500 disabled:opacity-40 text-white text-sm font-semibold rounded-xl">Ler o texto</button>
+            </div>
+            <button onClick={() => { setError(''); setStep('scan') }} className="text-gray-500 text-sm min-h-11">Voltar</button>
           </div>
         )}
 
@@ -327,6 +409,9 @@ export default function NfceReader({ familyId, user, catalog: catalogProp, entri
                 )
               })()}
               <p className="text-gray-600 text-xs mt-1">A chave fica embaixo do QR no cupom. No app Nota Legal, dá para copiar a chave ou o link "Visualizar NFC-e".</p>
+              <button onClick={() => openPaste(link.trim())} className="text-green-400 text-sm font-medium min-h-11 mt-1">
+                A leitura não funciona? Ler pelo site da SEFAZ
+              </button>
             </div>
           </div>
         )}

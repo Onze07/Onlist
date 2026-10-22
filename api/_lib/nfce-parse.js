@@ -183,3 +183,78 @@ const KEY_PORTALS = {
 export function keyConsultUrls(key) {
   return KEY_PORTALS[String(key).slice(0, 2)]?.(key) || []
 }
+
+// ---------- Texto copiado da página da nota ----------
+// Plano B quando o servidor não consegue falar com a SEFAZ: a pessoa abre a nota no navegador
+// do celular, copia a página inteira ("Selecionar tudo") e cola no app. Lido no próprio aparelho.
+// Formato da linha do item no portal (layout nacional):
+//   PAO BISNAGUINHA IG KGR (Código: 00002387)
+//   Qtde.:0,312 UN: KG Vl. Unit.: 28,493589   Vl. Total 8,89
+const TEXT_ITEM_RE = /([^\n]*?\S)\s*\(\s*C[óo]d(?:igo)?\.?\s*:?\s*([^)]*)\)\s*Qtde\.?\s*:?\s*([\d.,]+)\s*UN\s*:?\s*([A-Za-z]+?)\s*Vl\.?\s*Unit\.?\s*:?\s*([\d.,]+)\s*(?:Vl\.?\s*Total\s*:?\s*)?(?:R\$\s*)?([\d.,]+)/gi
+
+// Cabeçalho da página que pode grudar no nome do 1º item quando o texto vem numa linha só
+const HEADER_JUNK = /^.*(?:Filtrar itens\.*|ELETR[ÔO]NICA|CONSUMIDOR)\s*/i
+
+export function parseNfceText(raw) {
+  const src = String(raw || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ')
+  const items = []
+  for (const m of src.matchAll(TEXT_ITEM_RE)) {
+    const name = m[1].replace(HEADER_JUNK, '').replace(/\s+/g, ' ').trim()
+    const qty = brNumber(m[3])
+    const unitPrice = brNumber(m[5])
+    const total = brNumber(m[6])
+    if (!name || name.length > 120) continue
+    items.push({
+      name,
+      code: (m[2].match(/\d{4,}/) || [''])[0],
+      qty: qty || 1,
+      unit: m[4].toUpperCase(),
+      unitPrice,
+      total: total || Math.round(qty * unitPrice * 100) / 100,
+    })
+  }
+
+  const lines = src.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean)
+  const plain = lines.join(' ')
+  // Mercado: a linha antes do "CNPJ" (ou o texto logo antes dele, se veio tudo numa linha)
+  const cnpjLine = lines.findIndex(l => /CNPJ/i.test(l))
+  let store = ''
+  if (cnpjLine > 0 && !/CNPJ/i.test(lines[cnpjLine].split(/CNPJ/i)[0] || '')) {
+    const before = lines[cnpjLine].split(/CNPJ/i)[0].trim()
+    store = before || lines[cnpjLine - 1]
+  }
+  store = store.replace(HEADER_JUNK, '').trim()
+  const cnpjMatch = plain.match(/CNPJ:?\s*([\d./-]{14,18})/i)
+  const cnpj = cnpjMatch ? cnpjMatch[1].replace(/\D/g, '') : ''
+  const keyMatch = plain.match(/((?:\d{4}\s?){10}\d{4})/)
+  const key = keyMatch ? keyMatch[1].replace(/\s/g, '') : null
+  const emission = plain.match(/Emiss[ãa]o:?\s*(?:em:?\s*)?(\d{2}\/\d{2}\/\d{2,4})\s*(?:[àa]s\s*|-\s*)?(\d{2}:\d{2}(?::\d{2})?)?/i)
+  let issuedAt = null
+  if (emission) {
+    const [d, mo, yy] = emission[1].split('/')
+    const y = yy.length === 2 ? `20${yy}` : yy
+    const time = emission[2] ? (emission[2].length === 5 ? emission[2] + ':00' : emission[2]) : '12:00:00'
+    issuedAt = `${y}-${mo}-${d}T${time}${ufOffset(key)}`
+  }
+  const totalMatch = plain.match(/Valor a pagar R\$:?\s*([\d.,]+)/i) || plain.match(/Valor total R\$:?\s*([\d.,]+)/i)
+  const discountMatch = plain.match(/Descontos? R\$:?\s*([\d.,]+)/i)
+  const sum = Math.round(items.reduce((s, i) => s + i.total, 0) * 100) / 100
+  return {
+    store,
+    cnpj,
+    issuedAt,
+    total: totalMatch ? brNumber(totalMatch[1]) : sum,
+    discount: discountMatch ? brNumber(discountMatch[1]) : 0,
+    key,
+    items,
+  }
+}
+
+// Endereço para abrir a nota no navegador (link do QR, ou consulta pela chave em RO)
+export function portalUrlFor(input) {
+  const raw = String(input || '').trim()
+  if (/^https?:\/\//i.test(raw)) return validNfceUrl(raw)?.url || null
+  const key = raw.replace(/\D/g, '')
+  if (key.length !== 44) return null
+  return keyConsultUrls(key)[0] || null
+}
